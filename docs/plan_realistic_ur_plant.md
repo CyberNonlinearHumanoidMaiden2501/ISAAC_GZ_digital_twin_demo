@@ -61,12 +61,11 @@ directories empty). They are repurposed and renamed, plus one new package:
 
 ```
 src/
-├── ur_plant_description/             # (from ros_gz_description) plant config + generator
+├── ur_plant_description/             # (from ros_gz_description) plant config + description
 │   ├── config/plant_config.yaml      # friction, accel limits, encoder/motor/IMU params,
 │   │                                 #   per-model tables (ur3e/ur5e/ur10e/ur16e)
-│   ├── scripts/generate_plant_description.py   # upstream xacro → patched URDF (+ sensors)
-│   ├── models/payload.sdf            # configurable-mass payload box for payload_attach
-│   └── models/<ur_type>/ur_plant.urdf   # generated at launch, gitignored
+│   ├── models/<ur_type>/ur_plant.urdf + model.config   # generated once, hand-edited, committed; model://-resolvable
+│   └── models/payload.sdf            # configurable-mass payload box for payload_attach
 ├── ur_plant_world/                   # (from ros_gz_world) worlds + gz-sim system plugins
 │   ├── worlds/ur_plant_world.sdf     # pinned DART physics + our two plugins
 │   ├── include/ur_plant_world/       # plugin headers (namespace ur_plant_world)
@@ -122,24 +121,25 @@ workspace `install/setup.bash` currently chains their env hooks.
   (step response: rise time, overshoot vs real UR servo bandwidth).
 - Keep upstream tolerances/constraints; may tighten later.
 
-### 3. `ur_plant_description` — URDF generation
+### 3. `ur_plant_description` — the committed plant URDF
 
-- The generator consumes the upstream `ur_gz.urdf.xacro` directly (ur_description
-  macros, world/ground links, `gz_ros2_control` plugin block) and injects three
-  `<gazebo>` sensor blocks:
-  - **force_torque sensor on `wrist_3_joint`** — per-axis `<noise type="gaussian">`
-    (stddev, bias_mean, bias_stddev, dynamic bias), 500 Hz, saturated at the vendor
-    ±50 N / ±10 Nm;
-  - **6-axis IMU at `base_link`** — per-axis gaussian noise on angular_velocity and
-    linear_acceleration, 500 Hz (represents the real Base Filter Board IMUs);
-  - **IMU at `tool0` used as accelerometer only** — mirrors the real Tool PCBA
-    accelerometer (RTDE `actual_tool_accelerometer`); gyro part discarded.
-- `generate_plant_description.py` runs xacro, then patches the XML from `plant_config.yaml`:
-  - per-joint `<dynamics damping/friction>` → viscous + Coulomb values,
-  - `<param name="initial_value">` overrides from `initial_positions`.
-- The generated URDF lands in `models/<ur_type>/ur_plant.urdf` (gitignored, regenerated
-  per launch); `robot_state_publisher` reads it and `ros_gz_sim create` spawns with
-  `-file`.
+- The base URDF is generated **once** from the upstream `ur_gz.urdf.xacro` (ur_description
+  macros, world/ground links, `gz_ros2_control` plugin block), committed to
+  `models/<ur_type>/ur_plant.urdf`, then hand-edited:
+  - per-joint `<dynamics damping/friction>` → viscous + Coulomb values from
+    `plant_config.yaml`,
+  - `initial_value` params from `initial_positions`,
+  - three `<gazebo>` sensor blocks:
+    - **force_torque sensor on `wrist_3_joint`** — per-axis `<noise type="gaussian">`
+      (stddev, bias_mean, bias_stddev, dynamic bias), 500 Hz, saturated at the vendor
+      ±50 N / ±10 Nm;
+    - **6-axis IMU at `base_link`** — per-axis gaussian noise on angular_velocity and
+      linear_acceleration, 500 Hz (represents the real Base Filter Board IMUs);
+    - **IMU at `tool0` used as accelerometer only** — mirrors the real Tool PCBA
+      accelerometer (RTDE `actual_tool_accelerometer`); gyro part discarded.
+- No generator script, no launch-time code generation; regeneration is a documented
+  manual step (see `plan_stage1_description.md`). `robot_state_publisher` reads the
+  file; `ros_gz_sim create` spawns with `-file`.
 
 ### 4. `ur_plant_sensors` — `plant_sensors.cpp` (rclcpp node)
 
@@ -243,9 +243,10 @@ workspace `install/setup.bash` currently chains their env hooks.
   `ur_plant_sensors`, apply the template fixes (namespace, hooks, `GZ_ADD_PLUGIN`,
   delete `worlds/empty.sdf`), remove stale `build/`/`install/` prefixes, and do a fresh
   colcon build of the four named-but-empty packages.
-- **Stage 1 (config-level realism, no new C++):** description (xacro, plant_config,
-  generator, payload model) → world (pinned SDF) → bringup (effort+PID controllers,
-  launch file). Detailed design: [`plan_stage1_description.md`](plan_stage1_description.md).
+- **Stage 1 (config-level realism, no new C++):** description (committed hand-edited
+  URDF generated once from the upstream xacro, plant_config, payload model) → world
+  (pinned SDF) → bringup (effort+PID controllers, launch file). Detailed design:
+  [`plan_stage1_description.md`](plan_stage1_description.md).
   Verify headless: `example_move.py` works, tracking error behaves like a
   real arm (finite settling, gravity-holding efforts on the lift joints), tune PID.
 - **Stage 2 (C++ realism):** world plugins (`actuator_dynamics`, `fault_injection`) →

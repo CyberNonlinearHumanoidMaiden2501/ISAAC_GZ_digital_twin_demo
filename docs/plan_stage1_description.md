@@ -7,17 +7,15 @@
 
 ## Design principle
 
-Consume the upstream `ur_simulation_gz` xacro directly — no local xacro copies at all.
-A Python generator is the **single customization point**: it runs xacro on the upstream
-file, patches the result, and injects sensor blocks — all driven by one YAML config.
+Generate the base URDF **once** from the upstream `ur_simulation_gz` xacro and commit it as a regular, hand-edited file — no generator script, no launch-time code generation. The committed URDF is edited by hand like any URDF written from scratch, with `plant_config.yaml` as the record of the values it contains.
 
 ## Decisions (confirmed with user)
 
 | Decision | Choice |
 |---|---|
 | F/T sensor placement | **`wrist_3_joint`** — gz-sim F/T sensors must live on a joint, and fixed joints (like `wrist_3_link-ft_frame`) may be lumped away in URDF→SDF conversion |
-| Sensor blocks | **Injected by the generator script**, not authored in any xacro |
-| Description source | **Upstream `ur_gz.urdf.xacro` consumed directly by the generator — no local xacro mirrors** |
+| Sensor blocks | **Authored directly in the committed URDF** as `<gazebo>` sensor blocks |
+| Description source | **Generated once from upstream `ur_gz.urdf.xacro` into a committed URDF, then hand-edited — no generator script** |
 
 F/T fidelity note: in `ur_macro.xacro` the `ft_frame` is at `xyz="0 0 0"` from
 `wrist_3_link` (only a π roll rotation), so the simulated sensor's measurement point is
@@ -28,7 +26,54 @@ real UR driver's `ft_data` behavior).
 
 ## New files
 
-### 1. `config/plant_config.yaml` (single source of truth)
+### 1. `models/ur5e/ur_plant.urdf` (committed, hand-edited)
+
+Generated **once** from the upstream xacro (documented command below), then edited by
+hand — no generator script, no runtime code generation:
+
+```bash
+xacro "$(ros2 pkg prefix ur_simulation_gz)/share/ur_simulation_gz/urdf/ur_gz.urdf.xacro" \
+  ur_type:=ur5e \
+  name:=ur \
+  simulation_controllers:="$(ros2 pkg prefix ur_plant_bringup)/share/ur_plant_bringup/config/ur_plant_controllers.yaml" \
+  > src/ur_plant_description/models/ur5e/ur_plant.urdf
+```
+
+(`name:=ur` is required: the top-level `<robot name="$(arg name)">` is evaluated
+before the in-file default is registered, so omitting it fails with "Undefined
+substitution argument name" — the same reason upstream's launch passes it.)
+
+Hand edits applied to the committed file (values from `plant_config.yaml`, which
+stays the record of values and the runtime config source for Stage 2):
+
+- per-joint `<dynamics damping friction>` on the six joints (upstream generates zeros),
+- `initial_value` params in the `<ros2_control>` block from `initial_positions`,
+- the three `<gazebo>` sensor blocks below.
+
+The file is a **committed source artifact** (not gitignored): `git diff` shows every
+tuning change, and the launch spawns it directly. Caveats: upstream generates with
+`force_abs_paths=true`, so mesh paths are absolute (`/opt/ros/jazzy/...`) — a distro
+change means regenerating; additional robot variants are additional committed files
+(`models/ur3e/ur_plant.urdf`, ...), each generated with the same command.
+
+A sibling `model.config` turns the directory into a first-class gz-sim model,
+resolvable as `model://ur5e` (the package hook exposes `models/` on
+`GZ_SIM_RESOURCE_PATH`):
+
+```xml
+<?xml version="1.0"?>
+<model>
+  <name>ur_plant</name>
+  <version>1.0</version>
+  <sdf version="1.8">ur_plant.urdf</sdf>
+  <description>UR5e plant with realistic joint dynamics and sensor noise</description>
+</model>
+```
+
+The launch still spawns with `-file`; that the `model://` lookup resolves a
+URDF-backed model is smoke-tested during verification (see below).
+
+### 2. `config/plant_config.yaml` (record of values + Stage 2 runtime config)
 
 ```yaml
 initial_positions:
@@ -82,34 +127,7 @@ vendor-anchored conservative σ, IMU values from the ISM330IS/ICM42688 chip data
 (marked as estimates — UR publishes no IMU specs). `accel_limit` is consumed by the
 controllers yaml, **not** the URDF — URDF has no standard acceleration-limit attribute.
 
-### 2. `scripts/generate_plant_description.py`
-
-- CLI: `--xacro-in <file>` (the upstream xacro — the launch file passes
-  `FindPackageShare("ur_simulation_gz")/urdf/ur_gz.urdf.xacro`), `--ur-type`,
-  `--config`, `--output <file>` or `--to-stdout`, plus pass-through xacro args
-  (`name`, `tf_prefix`, `safety_limits`, `safety_pos_margin`, `safety_k_position`,
-  `simulation_controllers`).
-- Pipeline:
-  1. run `xacro` (subprocess, ROS env) on the upstream `ur_gz.urdf.xacro` with the
-     given args;
-  2. parse the result with lxml and patch:
-     - per-joint `<dynamics damping=".." friction="..">` from config
-       (upstream hardcodes `damping="0" friction="0"`),
-     - `<param name="initial_value">` under each joint's position state interface
-       from `initial_positions`,
-     - inject three `<gazebo reference>` sensor blocks before `</robot>` (below);
-  3. serialize (pretty-printed lxml) to `--output` or stdout.
-- Deterministic and idempotent.
-- **Output placement**: the generated description lands in the package's model tree —
-  `ur_plant_description/models/<ur_type>/ur_plant.urdf` (e.g. `models/ur5e/ur_plant.urdf`),
-  with `<ur_type>` acting as the robot/model name. Because the package env hook already
-  exposes `models/` via `GZ_SIM_RESOURCE_PATH`, the plant description lives at a
-  resource-path location gz-sim can find — it can be spawned from that file, and could
-  later be included in the world via a `model://` URI (adding a `model.config` per
-  model dir). Generated files are runtime artifacts: regenerated on every launch and
-  not committed to git (`.gitignore`: `src/ur_plant_description/models/*/ur_plant.urdf`).
-
-## Injected sensor blocks (syntax, schema-verified)
+## Sensor blocks (authored in the committed URDF)
 
 ```xml
 <!-- force-torque at the last revolute joint (frame: child = wrist_3_link) -->
@@ -169,12 +187,12 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
 
 ## Launch integration (`ur_plant_bringup`)
 
-- The generator writes the description to `models/<ur_type>/ur_plant.urdf` (see output
-  placement above). The launch feeds that single generated file to both consumers:
-  `robot_state_publisher` gets `robot_description` read from the file, and
-  `ros_gz_sim create` spawns with `-file <path>` (replacing the upstream `-string` +
-  xacro Command substitution). `--to-stdout` remains available for debugging. The file
-  is regenerated on every launch and never committed.
+- The launch uses the committed file directly: `robot_description` is read from
+  `models/<ur_type>/ur_plant.urdf` (via `FindPackageShare("ur_plant_description")`),
+  and `ros_gz_sim create` spawns with `-file <path>` — replacing the upstream
+  `-string` + xacro `Command` substitution. No code generation at launch time.
+  (With the sibling `model.config`, including the robot in the world via a
+  `model://ur5e` URI is also possible; the launch uses `-file` either way.)
 - `controllers_file` flows through as the `simulation_controllers` xacro arg into the
   `gz_ros2_control-system` plugin `<parameters>` element, as upstream does.
 - The robot is spawned with the **fixed name `ur`** (no `-allow_renaming`), so the gz
@@ -300,11 +318,14 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
 
 ## Verification
 
-1. Generate the URDF for `ur5e` → lands in `models/ur5e/ur_plant.urdf`; `check_urdf`
-   passes; grep confirms non-zero dynamics on all 6 joints and the three sensor blocks.
+1. `check_urdf` on the committed `models/ur5e/ur_plant.urdf` passes; grep confirms
+   non-zero dynamics on all 6 joints and the three sensor blocks.
 2. Launch headless → `gz topic -l` shows `/model/ur/tcp_fts_sensor`,
    `/model/ur/base_imu`, `/model/ur/tool_accel`; bridged topics publish at ~500 Hz;
    `example_move.py` moves the arm; lift joints show gravity-holding effort; tune PID.
+3. Smoke-test the `model://ur5e` URI: a throwaway world with
+   `<include><uri>model://ur5e</uri></include>` loads the plant, confirming gz-sim
+   resolves the URDF-backed model.
 
 ## Open notes
 
