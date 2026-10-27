@@ -61,12 +61,12 @@ directories empty). They are repurposed and renamed, plus one new package:
 
 ```
 src/
-├── ur_plant_description/             # (from ros_gz_description) robot description artifacts
-│   ├── urdf/ur_plant.urdf.xacro      # upstream structure + F/T, IMU, tool-accel sensor blocks
+├── ur_plant_description/             # (from ros_gz_description) plant config + generator
 │   ├── config/plant_config.yaml      # friction, accel limits, encoder/motor/IMU params,
 │   │                                 #   per-model tables (ur3e/ur5e/ur10e/ur16e)
-│   ├── scripts/generate_plant_description.py   # xacro → patched URDF (dynamics, limits)
-│   └── models/payload.sdf            # configurable-mass payload box for payload_attach
+│   ├── scripts/generate_plant_description.py   # upstream xacro → patched URDF (+ sensors)
+│   ├── models/payload.sdf            # configurable-mass payload box for payload_attach
+│   └── models/<ur_type>/ur_plant.urdf   # generated at launch, gitignored
 ├── ur_plant_world/                   # (from ros_gz_world) worlds + gz-sim system plugins
 │   ├── worlds/ur_plant_world.sdf     # pinned DART physics + our two plugins
 │   ├── include/ur_plant_world/       # plugin headers (namespace ur_plant_world)
@@ -124,20 +124,22 @@ workspace `install/setup.bash` currently chains their env hooks.
 
 ### 3. `ur_plant_description` — URDF generation
 
-- `ur_plant.urdf.xacro` mirrors upstream `ur_gz.urdf.xacro` (ur_description macros,
-  world/ground links, `gz_ros2_control` plugin block) and adds three `<gazebo>` sensor blocks:
-  - **force_torque sensor at `tool0`** — per-axis `<noise type="gaussian">` (stddev,
-    bias_mean, bias_stddev, dynamic bias), 500 Hz, saturated at the vendor ±50 N / ±10 Nm;
+- The generator consumes the upstream `ur_gz.urdf.xacro` directly (ur_description
+  macros, world/ground links, `gz_ros2_control` plugin block) and injects three
+  `<gazebo>` sensor blocks:
+  - **force_torque sensor on `wrist_3_joint`** — per-axis `<noise type="gaussian">`
+    (stddev, bias_mean, bias_stddev, dynamic bias), 500 Hz, saturated at the vendor
+    ±50 N / ±10 Nm;
   - **6-axis IMU at `base_link`** — per-axis gaussian noise on angular_velocity and
     linear_acceleration, 500 Hz (represents the real Base Filter Board IMUs);
   - **IMU at `tool0` used as accelerometer only** — mirrors the real Tool PCBA
     accelerometer (RTDE `actual_tool_accelerometer`); gyro part discarded.
 - `generate_plant_description.py` runs xacro, then patches the XML from `plant_config.yaml`:
   - per-joint `<dynamics damping/friction>` → viscous + Coulomb values,
-  - `has_acceleration_limits: true` with conservative derived limits **[estimate — UR
-    publishes none]**.
-- Launch runs the generator once, then feeds the same patched URDF to both
-  `robot_state_publisher` and `ros_gz_sim create`.
+  - `<param name="initial_value">` overrides from `initial_positions`.
+- The generated URDF lands in `models/<ur_type>/ur_plant.urdf` (gitignored, regenerated
+  per launch); `robot_state_publisher` reads it and `ros_gz_sim create` spawns with
+  `-file`.
 
 ### 4. `ur_plant_sensors` — `plant_sensors.cpp` (rclcpp node)
 

@@ -7,16 +7,17 @@
 
 ## Design principle
 
-Keep the xacro files as near-exact mirrors of upstream `ur_simulation_gz`, and make a
-Python generator the **single customization point**: it runs xacro, patches the result,
-and injects sensor blocks — all driven by one YAML config.
+Consume the upstream `ur_simulation_gz` xacro directly — no local xacro copies at all.
+A Python generator is the **single customization point**: it runs xacro on the upstream
+file, patches the result, and injects sensor blocks — all driven by one YAML config.
 
 ## Decisions (confirmed with user)
 
 | Decision | Choice |
 |---|---|
 | F/T sensor placement | **`wrist_3_joint`** — gz-sim F/T sensors must live on a joint, and fixed joints (like `wrist_3_link-ft_frame`) may be lumped away in URDF→SDF conversion |
-| Sensor blocks | **Injected by the generator script**, not authored in the xacro (keeps the xacro diff-friendly with upstream) |
+| Sensor blocks | **Injected by the generator script**, not authored in any xacro |
+| Description source | **Upstream `ur_gz.urdf.xacro` consumed directly by the generator — no local xacro mirrors** |
 
 F/T fidelity note: in `ur_macro.xacro` the `ft_frame` is at `xyz="0 0 0"` from
 `wrist_3_link` (only a π roll rotation), so the simulated sensor's measurement point is
@@ -27,24 +28,7 @@ real UR driver's `ft_data` behavior).
 
 ## New files
 
-### 1. `urdf/ur_plant.urdf.xacro` (mirror of upstream `ur_gz.urdf.xacro`)
-
-Identical structure: `ur_macro.xacro` include, our ros2_control include, the same args
-(`name`, `ur_type`, `tf_prefix`, `joint_limit_params`, `kinematics_params`,
-`physical_params`, `visual_params`, `transmission_hw_interface`, `safety_limits`,
-`safety_pos_margin`, `safety_k_position`, `simulation_controllers`, `ros_namespace`),
-`world` + `ground_plane` links, `xacro:ur_robot` with `parent="world"`, and the
-`gz_ros2_control-system` plugin block with `<parameters>$(arg simulation_controllers)</parameters>`.
-The only difference from upstream: it includes `ur_plant.ros2_control.xacro` instead of
-the upstream one. **No sensor blocks, no dynamics changes here.**
-
-### 2. `urdf/ur_plant.ros2_control.xacro` (mirror of `ur_gz.ros2_control.xacro`)
-
-Same `ur_ros2_control` macro: `gz_ros2_control/GazeboSimSystem` hardware plugin +
-`ur_joint_control_description` with the default initial-positions dict. Initial values
-are overridden by the generator, not here.
-
-### 3. `config/plant_config.yaml` (single source of truth)
+### 1. `config/plant_config.yaml` (single source of truth)
 
 ```yaml
 initial_positions:
@@ -98,13 +82,16 @@ vendor-anchored conservative σ, IMU values from the ISM330IS/ICM42688 chip data
 (marked as estimates — UR publishes no IMU specs). `accel_limit` is consumed by the
 controllers yaml, **not** the URDF — URDF has no standard acceleration-limit attribute.
 
-### 4. `scripts/generate_plant_description.py`
+### 2. `scripts/generate_plant_description.py`
 
-- CLI: `--ur-type`, `--config`, `--output <file>` or `--to-stdout`, plus pass-through
-  xacro args (`name`, `tf_prefix`, `safety_limits`, `safety_pos_margin`,
-  `safety_k_position`, `simulation_controllers`).
+- CLI: `--xacro-in <file>` (the upstream xacro — the launch file passes
+  `FindPackageShare("ur_simulation_gz")/urdf/ur_gz.urdf.xacro`), `--ur-type`,
+  `--config`, `--output <file>` or `--to-stdout`, plus pass-through xacro args
+  (`name`, `tf_prefix`, `safety_limits`, `safety_pos_margin`, `safety_k_position`,
+  `simulation_controllers`).
 - Pipeline:
-  1. run `xacro` (subprocess, ROS env) on `ur_plant.urdf.xacro` with the given args;
+  1. run `xacro` (subprocess, ROS env) on the upstream `ur_gz.urdf.xacro` with the
+     given args;
   2. parse the result with lxml and patch:
      - per-joint `<dynamics damping=".." friction="..">` from config
        (upstream hardcodes `damping="0" friction="0"`),
@@ -113,6 +100,14 @@ controllers yaml, **not** the URDF — URDF has no standard acceleration-limit a
      - inject three `<gazebo reference>` sensor blocks before `</robot>` (below);
   3. serialize (pretty-printed lxml) to `--output` or stdout.
 - Deterministic and idempotent.
+- **Output placement**: the generated description lands in the package's model tree —
+  `ur_plant_description/models/<ur_type>/ur_plant.urdf` (e.g. `models/ur5e/ur_plant.urdf`),
+  with `<ur_type>` acting as the robot/model name. Because the package env hook already
+  exposes `models/` via `GZ_SIM_RESOURCE_PATH`, the plant description lives at a
+  resource-path location gz-sim can find — it can be spawned from that file, and could
+  later be included in the world via a `model://` URI (adding a `model.config` per
+  model dir). Generated files are runtime artifacts: regenerated on every launch and
+  not committed to git (`.gitignore`: `src/ur_plant_description/models/*/ur_plant.urdf`).
 
 ## Injected sensor blocks (syntax, schema-verified)
 
@@ -174,12 +169,12 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
 
 ## Launch integration (`ur_plant_bringup`)
 
-- `robot_description` = `Command([python3, <generator>, --to-stdout, --ur-type ...,
-  --config <plant_config.yaml>, simulation_controllers:=<abs path to
-  ur_plant_controllers.yaml>])` — the **same substitution object** feeds both
-  `robot_state_publisher` (param) and `ros_gz_sim create -string`, exactly like the
-  upstream xacro pattern. The generator runs twice per launch (~seconds each);
-  acceptable, matches the upstream idiom.
+- The generator writes the description to `models/<ur_type>/ur_plant.urdf` (see output
+  placement above). The launch feeds that single generated file to both consumers:
+  `robot_state_publisher` gets `robot_description` read from the file, and
+  `ros_gz_sim create` spawns with `-file <path>` (replacing the upstream `-string` +
+  xacro Command substitution). `--to-stdout` remains available for debugging. The file
+  is regenerated on every launch and never committed.
 - `controllers_file` flows through as the `simulation_controllers` xacro arg into the
   `gz_ros2_control-system` plugin `<parameters>` element, as upstream does.
 - The robot is spawned with the **fixed name `ur`** (no `-allow_renaming`), so the gz
@@ -194,8 +189,80 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
    `gz-sim-imu-system` and `gz-sim-forcetorque-system` plugins — gz-sim does not
    auto-load sensor systems.
 2. **`ur_plant_bringup/config/ur_plant_controllers.yaml`** — effort-mode JTC with
-   per-joint PID gains plus per-joint velocity/acceleration constraints; this is where
-   `accel_limit` lands (URDF cannot express acceleration limits).
+   per-joint PID gains. Example (starting gains, tuned empirically):
+
+   ```yaml
+   controller_manager:
+     ros__parameters:
+       update_rate: 500
+
+       joint_state_broadcaster:
+         type: joint_state_broadcaster/JointStateBroadcaster
+         # no state_publish_rate -> publishes at the full 500 Hz CM rate,
+         # matching the real UR driver
+
+       io_and_status_controller:
+         type: ur_controllers/GPIOController
+
+       speed_scaling_state_broadcaster:
+         type: ur_controllers/SpeedScalingStateBroadcaster
+
+       joint_trajectory_controller:
+         type: joint_trajectory_controller/JointTrajectoryController
+
+       scaled_joint_trajectory_controller:
+         type: ur_controllers/ScaledJointTrajectoryController
+
+       forward_velocity_controller:
+         type: velocity_controllers/JointGroupVelocityController
+
+       forward_position_controller:
+         type: position_controllers/JointGroupPositionController
+
+   scaled_joint_trajectory_controller:
+     ros__parameters:
+       joints: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint,
+                wrist_1_joint, wrist_2_joint, wrist_3_joint]
+       command_interfaces: [effort]
+       state_interfaces: [position, velocity, effort]
+       state_publish_rate: 100.0
+       action_monitor_rate: 20.0
+       allow_partial_joints_goal: false
+       speed_scaling_interface_name: ""
+
+       constraints:
+         stopped_velocity_tolerance: 0.2
+         goal_time: 0.0
+         shoulder_pan_joint: {trajectory: 0.2, goal: 0.1}
+         shoulder_lift_joint: {trajectory: 0.2, goal: 0.1}
+         elbow_joint: {trajectory: 0.2, goal: 0.1}
+         wrist_1_joint: {trajectory: 0.2, goal: 0.1}
+         wrist_2_joint: {trajectory: 0.2, goal: 0.1}
+         wrist_3_joint: {trajectory: 0.2, goal: 0.1}
+
+       # Starting gains, tuned empirically; i_clamp stays well below the
+       # vendor joint torque ratings (150 Nm shoulder/elbow, 28 Nm wrist).
+       gains:
+         shoulder_pan_joint:  {p: 4000.0, i: 400.0, d: 50.0, i_clamp: 40.0}
+         shoulder_lift_joint: {p: 4000.0, i: 400.0, d: 50.0, i_clamp: 40.0}
+         elbow_joint:         {p: 3500.0, i: 350.0, d: 40.0, i_clamp: 40.0}
+         wrist_1_joint:       {p: 800.0,  i: 50.0,  d: 10.0, i_clamp: 8.0}
+         wrist_2_joint:       {p: 800.0,  i: 50.0,  d: 10.0, i_clamp: 8.0}
+         wrist_3_joint:       {p: 500.0,  i: 30.0,  d: 5.0,  i_clamp: 5.0}
+
+   joint_trajectory_controller:
+     ros__parameters:
+       # identical joints/interfaces/constraints/gains block for the plain
+       # (unscaled) JTC; the scaled one is the launch default, as upstream
+   ```
+
+   Notes on limits: JTC clamps commanded **velocity** to the URDF limits (180 °/s,
+   already in `ur_description`) — nothing to add. **Acceleration** has no URDF
+   attribute and no JTC parameter (UR publishes no accel limits), so effective
+   acceleration limiting comes from the trajectory's quintic-spline interpolation
+   plus the Stage 2 actuator plugin's torque rate limit; `accel_limit` in
+   `plant_config.yaml` is therefore informational for now. The `i_clamp` values
+   bound integrator windup below the vendor torque ratings.
 3. **Bridges** — `config/bridges.yaml` in `ur_plant_bringup`, loaded through the
    bridge node's `config_file` parameter (the standard ros_gz_bridge YAML form):
 
@@ -233,8 +300,8 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
 
 ## Verification
 
-1. Generate the URDF for `ur5e` → `check_urdf` passes; grep confirms non-zero dynamics
-   on all 6 joints and the three sensor blocks.
+1. Generate the URDF for `ur5e` → lands in `models/ur5e/ur_plant.urdf`; `check_urdf`
+   passes; grep confirms non-zero dynamics on all 6 joints and the three sensor blocks.
 2. Launch headless → `gz topic -l` shows `/model/ur/tcp_fts_sensor`,
    `/model/ur/base_imu`, `/model/ur/tool_accel`; bridged topics publish at ~500 Hz;
    `example_move.py` moves the arm; lift joints show gravity-holding effort; tune PID.
