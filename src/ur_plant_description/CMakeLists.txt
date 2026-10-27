@@ -10,11 +10,13 @@ if(BUILD_TESTING)
 endif()
 
 install(
-  DIRECTORY
-    models/
-    urdf/
-    config/
-  DESTINATION share/${PROJECT_NAME}
+  DIRECTORY models/
+  DESTINATION share/${PROJECT_NAME}/models
+)
+
+install(
+  DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
 )
 
 install(

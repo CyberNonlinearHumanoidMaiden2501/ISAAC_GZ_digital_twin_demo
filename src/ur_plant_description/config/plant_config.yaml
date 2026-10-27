@@ -1,0 +1,86 @@
+# ur_plant_description — plant configuration, the single source of truth for the
+# Gazebo "plant" realism parameters. Provenance tags: [V] vendor-documented,
+# [L] literature-measured, [E] engineering estimate — see
+# docs/ur_hardware_research.md for the underlying research.
+
+default_ur_type: ur5e
+
+initial_positions:
+  shoulder_pan_joint: 0.0
+  shoulder_lift_joint: -1.57
+  elbow_joint: 0.0
+  wrist_1_joint: -1.57
+  wrist_2_joint: 0.0
+  wrist_3_joint: 0.0
+
+# Joint dynamics patched into the generated URDF.
+# damping       : viscous damping in N·m·s/rad, from the UR5e literature range
+#                 (9-15 across joints, higher on J1-3) [L]
+# friction      : written to the URDF <dynamics friction> attribute, which SDF/DART
+#                 treat as a dimensionless coefficient — seeded from the Coulomb
+#                 range (7-12 Nm, higher on J1-3) and to be calibrated empirically [E].
+#                 Plugin-based Nm friction is the Stage 2 fallback.
+# accel_limit   : informational only — no URDF/JTC parameter exists for it [E]
+joints:
+  shoulder_pan_joint: {damping: 14.0, friction: 10.0, accel_limit: 3.0}
+  shoulder_lift_joint: {damping: 14.0, friction: 10.0, accel_limit: 3.0}
+  elbow_joint: {damping: 12.0, friction: 8.0, accel_limit: 3.5}
+  wrist_1_joint: {damping: 10.0, friction: 7.0, accel_limit: 5.0}
+  wrist_2_joint: {damping: 10.0, friction: 7.0, accel_limit: 5.0}
+  wrist_3_joint: {damping: 9.0, friction: 7.0, accel_limit: 6.0}
+
+sensors:
+  fts:
+    reference: wrist_3_joint   # gz-sim F/T sensors live on joints; see Stage 1 plan
+    update_rate: 500
+    frame: child               # wrist_3_link
+    noise:
+      # vendor-anchored conservative noise within the ±3.5 N / ±0.2 Nm precision [V]
+      force: {stddev: 1.0, bias_mean: 0.0, bias_stddev: 0.2}
+      torque: {stddev: 0.05, bias_mean: 0.0, bias_stddev: 0.01}
+  base_imu:
+    reference: base_link
+    update_rate: 500
+    noise:
+      # chip-level grounding (ISM330IS / ICM42688); UR publishes no IMU specs [E]
+      angular_velocity: {stddev: 0.0005, bias_mean: 0.0, bias_stddev: 0.0002,
+                         dynamic_bias_stddev: 0.0001, dynamic_bias_correlation_time: 3600.0}
+      linear_acceleration: {stddev: 0.01, bias_mean: 0.0, bias_stddev: 0.01,
+                            dynamic_bias_stddev: 0.005, dynamic_bias_correlation_time: 3600.0}
+  tool_accel:
+    reference: tool0
+    update_rate: 500
+    # gyro part of this sensor is discarded at publish time (Stage 2)
+    noise:
+      linear_acceleration: {stddev: 0.01, bias_mean: 0.0, bias_stddev: 0.01,
+                            dynamic_bias_stddev: 0.005, dynamic_bias_correlation_time: 3600.0}
+
+# Per-model vendor tables [V]: effort limits (Nm), velocity limits (rad/s),
+# integrated FTS ranges (N / Nm), payload (kg).
+models:
+  ur3e:
+    effort_limits: [54, 54, 28, 9, 9, 9]
+    velocity_limits: [3.1416, 3.1416, 3.1416, 6.2832, 6.2832, 6.2832]
+    fts: {force_range: 30.0, torque_range: 10.0}
+    payload_kg: 3
+  ur5e:
+    effort_limits: [150, 150, 150, 28, 28, 28]
+    velocity_limits: [3.1416, 3.1416, 3.1416, 3.1416, 3.1416, 3.1416]
+    fts: {force_range: 50.0, torque_range: 10.0}
+    payload_kg: 5
+  ur10e:
+    effort_limits: [330, 330, 150, 54, 54, 54]
+    velocity_limits: [2.0944, 2.0944, 3.1416, 3.1416, 3.1416, 3.1416]
+    fts: {force_range: 100.0, torque_range: 10.0}
+    payload_kg: 12.5
+  ur16e:
+    effort_limits: [330, 330, 150, 54, 54, 54]
+    velocity_limits: [2.0944, 2.0944, 3.1416, 3.1416, 3.1416, 3.1416]
+    fts: {force_range: 160.0, torque_range: 10.0}
+    payload_kg: 16
+
+# Actuator model for the Stage 2 actuator_dynamics plugin; recorded here so all
+# plant parameters stay in one place.
+actuator:
+  tau_motor: {default: 0.005}   # first-order motor lag, s [E: ~1-3 ms electrical + 2 ms loop]
+  torque_rate_limit: 500.0      # Nm/s, tuned empirically [E]
