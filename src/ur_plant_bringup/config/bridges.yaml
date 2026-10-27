@@ -1,0 +1,30 @@
+# ros_gz_bridge configuration for the UR plant.
+#
+# The gz-side topic names assume:
+#   - the robot is spawned with the fixed name "ur",
+#   - the generator pins explicit <topic> elements on each sensor
+#     (base_imu, tool_accel, tcp_fts_sensor), giving /model/ur/<topic>.
+# All plant sensors are GZ_TO_ROS; nothing flows back to Gazebo in Stage 1.
+- ros_topic_name: "/clock"
+  gz_topic_name: "/clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "gz.msgs.Clock"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/imu"
+  gz_topic_name: "/model/ur/base_imu"
+  ros_type_name: "sensor_msgs/msg/Imu"
+  gz_type_name: "gz.msgs.IMU"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/tool_accel"
+  gz_topic_name: "/model/ur/tool_accel"
+  ros_type_name: "sensor_msgs/msg/Imu"
+  gz_type_name: "gz.msgs.IMU"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/ft_sensor/wrench"
+  gz_topic_name: "/model/ur/tcp_fts_sensor"
+  ros_type_name: "geometry_msgs/msg/Wrench"
+  gz_type_name: "gz.msgs.Wrench"
+  direction: GZ_TO_ROS
