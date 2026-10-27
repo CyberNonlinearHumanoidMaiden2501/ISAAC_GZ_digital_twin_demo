@@ -243,7 +243,8 @@ workspace `install/setup.bash` currently chains their env hooks.
   colcon build of the four named-but-empty packages.
 - **Stage 1 (config-level realism, no new C++):** description (xacro, plant_config,
   generator, payload model) → world (pinned SDF) → bringup (effort+PID controllers,
-  launch file). Verify headless: `example_move.py` works, tracking error behaves like a
+  launch file). Detailed design: [`plan_stage1_description.md`](plan_stage1_description.md).
+  Verify headless: `example_move.py` works, tracking error behaves like a
   real arm (finite settling, gravity-holding efforts on the lift joints), tune PID.
 - **Stage 2 (C++ realism):** world plugins (`actuator_dynamics`, `fault_injection`) →
   sensors package (`plant_sensors` node, `SetFault.srv`, sensor faults, FTS zeroing,
