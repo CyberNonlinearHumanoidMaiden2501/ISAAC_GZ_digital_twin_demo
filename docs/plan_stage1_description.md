@@ -122,6 +122,7 @@ controllers yaml, **not** the URDF — URDF has no standard acceleration-limit a
   <sensor name="tcp_fts_sensor" type="force_torque">
     <always_on>true</always_on>
     <update_rate>500</update_rate>
+    <topic>tcp_fts_sensor</topic>
     <force_torque>
       <frame>child</frame>
       <measure_direction>child_to_parent</measure_direction>
@@ -142,6 +143,7 @@ controllers yaml, **not** the URDF — URDF has no standard acceleration-limit a
   <sensor name="base_imu" type="imu">
     <always_on>true</always_on>
     <update_rate>500</update_rate>
+    <topic>base_imu</topic>
     <imu>
       <angular_velocity><x><noise type="gaussian"><stddev>0.0005</stddev></noise></x>...</angular_velocity>
       <linear_acceleration><x><noise type="gaussian"><stddev>0.01</stddev><dynamic_bias_stddev>..</dynamic_bias_stddev><dynamic_bias_correlation_time>3600</dynamic_bias_correlation_time></noise></x>...</linear_acceleration>
@@ -150,8 +152,17 @@ controllers yaml, **not** the URDF — URDF has no standard acceleration-limit a
 </gazebo>
 
 <!-- tool accelerometer (same IMU schema; gyro discarded in Stage 2) -->
-<gazebo reference="tool0"><sensor name="tool_accel" type="imu">...</sensor></gazebo>
+<gazebo reference="tool0"><sensor name="tool_accel" type="imu">
+  <always_on>true</always_on>
+  <update_rate>500</update_rate>
+  <topic>tool_accel</topic>
+  <imu>...</imu>
+</sensor></gazebo>
 ```
+
+Each sensor pins an explicit `<topic>` so its gz transport topic (namespaced
+`/model/<spawn_name>/<topic>`) is stable and the bridge YAML can reference it by name —
+no dependence on gz-sim's default scoped-topic derivation.
 
 Noise paths follow the sdformat14 schemas: `angular_velocity/{x,y,z}` +
 `linear_acceleration/{x,y,z}` for IMU; `force/{x,y,z}` + `torque/{x,y,z}` for
@@ -171,6 +182,11 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
   acceptable, matches the upstream idiom.
 - `controllers_file` flows through as the `simulation_controllers` xacro arg into the
   `gz_ros2_control-system` plugin `<parameters>` element, as upstream does.
+- The robot is spawned with the **fixed name `ur`** (no `-allow_renaming`), so the gz
+  sensor topics' `/model/ur/...` namespace is deterministic.
+- One `parameter_bridge` node is loaded from `config/bridges.yaml` via
+  `parameters=[{"config_file": ...}]` (see companion change 3), replacing upstream's
+  inline CLI mapping.
 
 ## Required companion changes (same stage)
 
@@ -180,10 +196,40 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
 2. **`ur_plant_bringup/config/ur_plant_controllers.yaml`** — effort-mode JTC with
    per-joint PID gains plus per-joint velocity/acceleration constraints; this is where
    `accel_limit` lands (URDF cannot express acceleration limits).
-3. **Bridges** (`ros_gz_bridge`): `gz.msgs.IMU ↔ sensor_msgs/Imu` for `/plant/imu` and
-   `/plant/tool_accel`; `gz.msgs.Wrench ↔ geometry_msgs/Wrench` for
-   `/plant/ft_sensor/wrench`. gz topics are namespaced `/model/ur/<sensor_name>`;
-   remapped via bridge config.
+3. **Bridges** — `config/bridges.yaml` in `ur_plant_bringup`, loaded through the
+   bridge node's `config_file` parameter (the standard ros_gz_bridge YAML form):
+
+   ```yaml
+   - ros_topic_name: "/clock"
+     gz_topic_name: "/clock"
+     ros_type_name: "rosgraph_msgs/msg/Clock"
+     gz_type_name: "gz.msgs.Clock"
+     direction: GZ_TO_ROS
+
+   - ros_topic_name: "/plant/imu"
+     gz_topic_name: "/model/ur/base_imu"
+     ros_type_name: "sensor_msgs/msg/Imu"
+     gz_type_name: "gz.msgs.IMU"
+     direction: GZ_TO_ROS
+
+   - ros_topic_name: "/plant/tool_accel"
+     gz_topic_name: "/model/ur/tool_accel"
+     ros_type_name: "sensor_msgs/msg/Imu"
+     gz_type_name: "gz.msgs.IMU"
+     direction: GZ_TO_ROS
+
+   - ros_topic_name: "/plant/ft_sensor/wrench"
+     gz_topic_name: "/model/ur/tcp_fts_sensor"
+     ros_type_name: "geometry_msgs/msg/Wrench"
+     gz_type_name: "gz.msgs.Wrench"
+     direction: GZ_TO_ROS
+   ```
+
+   All entries `GZ_TO_ROS` (sensors only in Stage 1); the upstream inline `/clock`
+   mapping is folded in. The gz-side names assume (a) the fixed spawn name `ur` and
+   (b) the explicit `<topic>` per sensor pinned by the generator — so the mapping
+   cannot drift. `geometry_msgs/Wrench` carries no header; the Stage 2
+   `plant_sensors` node adds timestamps and the `tool0` frame transform.
 
 ## Verification
 
