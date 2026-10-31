@@ -265,7 +265,7 @@
     <origin rpy="0 0 0" xyz="-0.3922 0 0.1333"/>
     <axis xyz="0 0 1"/>
     <limit effort="28.0" lower="-6.283185307179586" upper="6.283185307179586" velocity="3.141592653589793"/>
-    <dynamics damping="10.0" friction="7.0"/>
+    <dynamics damping="2.5" friction="2.5"/>
   </joint>
   <joint name="wrist_2_joint" type="revolute">
     <parent link="wrist_1_link"/>
@@ -273,7 +273,7 @@
     <origin rpy="1.570796327 0 0" xyz="0 -0.0997 -2.044881182297852e-11"/>
     <axis xyz="0 0 1"/>
     <limit effort="28.0" lower="-6.283185307179586" upper="6.283185307179586" velocity="3.141592653589793"/>
-    <dynamics damping="10.0" friction="7.0"/>
+    <dynamics damping="2.5" friction="2.5"/>
   </joint>
   <joint name="wrist_3_joint" type="revolute">
     <parent link="wrist_2_link"/>
@@ -281,7 +281,7 @@
     <origin rpy="1.570796326589793 3.141592653589793 3.141592653589793" xyz="0 0.0996 -2.042830148012698e-11"/>
     <axis xyz="0 0 1"/>
     <limit effort="28.0" lower="-6.283185307179586" upper="6.283185307179586" velocity="3.141592653589793"/>
-    <dynamics damping="9.0" friction="7.0"/>
+    <dynamics damping="2.0" friction="2.0"/>
   </joint>
   <link name="ft_frame"/>
   <joint name="wrist_3_link-ft_frame" type="fixed">
@@ -432,7 +432,7 @@
     <sensor name="tcp_fts_sensor" type="force_torque">
       <always_on>true</always_on>
       <update_rate>500</update_rate>
-      <topic>tcp_fts_sensor</topic>
+      <topic>/model/ur/tcp_fts_sensor</topic>
       <force_torque>
         <frame>child</frame>
         <measure_direction>child_to_parent</measure_direction>
@@ -454,7 +454,7 @@
     <sensor name="base_imu" type="imu">
       <always_on>true</always_on>
       <update_rate>500</update_rate>
-      <topic>base_imu</topic>
+      <topic>/model/ur/base_imu</topic>
       <imu>
         <angular_velocity>
           <x><noise type="gaussian"><mean>0.0</mean><stddev>0.0005</stddev><bias_mean>0.0</bias_mean><bias_stddev>0.0002</bias_stddev><dynamic_bias_stddev>0.0001</dynamic_bias_stddev><dynamic_bias_correlation_time>3600.0</dynamic_bias_correlation_time></noise></x>
@@ -475,7 +475,7 @@
     <sensor name="tool_accel" type="imu">
       <always_on>true</always_on>
       <update_rate>500</update_rate>
-      <topic>tool_accel</topic>
+      <topic>/model/ur/tool_accel</topic>
       <imu>
         <linear_acceleration>
           <x><noise type="gaussian"><mean>0.0</mean><stddev>0.01</stddev><bias_mean>0.0</bias_mean><bias_stddev>0.01</bias_stddev><dynamic_bias_stddev>0.005</dynamic_bias_stddev><dynamic_bias_correlation_time>3600.0</dynamic_bias_correlation_time></noise></x>

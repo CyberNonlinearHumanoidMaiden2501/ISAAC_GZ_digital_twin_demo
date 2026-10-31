@@ -21,13 +21,18 @@ initial_positions:
 #                 range (7-12 Nm, higher on J1-3) and to be calibrated empirically [E].
 #                 Plugin-based Nm friction is the Stage 2 fallback.
 # accel_limit   : informational only — no URDF/JTC parameter exists for it [E]
+# NOTE: friction must leave torque budget for the documented max joint speed:
+# B*omega_max + C must be well below the vendor effort limit, or the joint can
+# never reach its rated speed. The literature viscous range (9-15) is only
+# self-consistent for the 150 Nm shoulder/elbow joints; the 28 Nm wrists get
+# reduced seeds (B*3.14 + C ~ 10 Nm). Full friction calibration in Stage 2.
 joints:
   shoulder_pan_joint: {damping: 14.0, friction: 10.0, accel_limit: 3.0}
   shoulder_lift_joint: {damping: 14.0, friction: 10.0, accel_limit: 3.0}
   elbow_joint: {damping: 12.0, friction: 8.0, accel_limit: 3.5}
-  wrist_1_joint: {damping: 10.0, friction: 7.0, accel_limit: 5.0}
-  wrist_2_joint: {damping: 10.0, friction: 7.0, accel_limit: 5.0}
-  wrist_3_joint: {damping: 9.0, friction: 7.0, accel_limit: 6.0}
+  wrist_1_joint: {damping: 2.5, friction: 2.5, accel_limit: 5.0}
+  wrist_2_joint: {damping: 2.5, friction: 2.5, accel_limit: 5.0}
+  wrist_3_joint: {damping: 2.0, friction: 2.0, accel_limit: 6.0}
 
 sensors:
   fts:

@@ -1,12 +1,11 @@
 import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, RegisterEventHandler
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
-    Command,
     IfElseSubstitution,
     LaunchConfiguration,
     PathJoinSubstitution,
@@ -84,17 +83,24 @@ def generate_launch_description():
     initial_joint_controller = LaunchConfiguration("initial_joint_controller")
     rviz_config_file = LaunchConfiguration("rviz_config_file")
 
-    # The committed URDF is read from the file directly — no xacro, no code
-    # generation at launch time.
-    robot_description_content = Command(["cat ", description_file])
-    robot_description = {"robot_description": robot_description_content}
+    # Read the committed URDF in Python so robot_description is a plain str
+    # (launch parses substitution output as YAML, which URDF text is not).
+    # OpaqueFunction so the file path resolves from the launch context — the
+    # ur_type argument selects the file.
+    def create_robot_state_publisher(context):
+        desc_file = context.perform_substitution(description_file)
+        with open(desc_file, "r") as infp:
+            robot_desc = infp.read()
+        return [
+            Node(
+                package="robot_state_publisher",
+                executable="robot_state_publisher",
+                output="both",
+                parameters=[{"use_sim_time": True}, {"robot_description": robot_desc}],
+            )
+        ]
 
-    robot_state_publisher_node = Node(
-        package="robot_state_publisher",
-        executable="robot_state_publisher",
-        output="both",
-        parameters=[{"use_sim_time": True}, robot_description],
-    )
+    robot_state_publisher = OpaqueFunction(function=create_robot_state_publisher)
 
     rviz_node = Node(
         package="rviz2",
@@ -167,7 +173,7 @@ def generate_launch_description():
     )
 
     nodes = [
-        robot_state_publisher_node,
+        robot_state_publisher,
         joint_state_broadcaster_spawner,
         delay_rviz_after_joint_state_broadcaster_spawner,
         initial_joint_controller_spawner_started,
