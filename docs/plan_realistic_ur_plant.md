@@ -113,11 +113,13 @@ workspace `install/setup.bash` currently chains their env hooks.
 
 - Copy of upstream `ur_controllers.yaml` with the trajectory controller switched to
   `command_interfaces: [effort]` and per-joint `gains: {p, i, d, i_clamp}`.
-- State interfaces become position + velocity + effort; controller_manager stays at 500 Hz.
+- State interfaces become position + velocity (JTC's `state_interfaces` only accepts
+  `{position, velocity, acceleration}`; effort still flows to `/raw_joint_states` via
+  the broadcaster's state read); controller_manager stays at 500 Hz.
 - **JSB publishes at the full 500 Hz** (no `state_publish_rate` override) — matching the
   real UR driver behavior.
 - Starting gains based on joint inertia (e.g., shoulder ~p=4000/i=400/d=50,
-  wrist ~p=800/i=50/d=10), tuned empirically in a dedicated tuning session
+  wrist ~p=800/i=50/d=10); tuned once in Stage 2 against the complete plant
   (step response: rise time, overshoot vs real UR servo bandwidth).
 - Keep upstream tolerances/constraints; may tighten later.
 
@@ -251,8 +253,11 @@ workspace `install/setup.bash` currently chains their env hooks.
   real arm (finite settling, gravity-holding efforts on the lift joints), tune PID.
 - **Stage 2 (C++ realism):** world plugins (`actuator_dynamics`, `fault_injection`) →
   sensors package (`plant_sensors` node, `SetFault.srv`, sensor faults, FTS zeroing,
-  `inject_fault.py` CLI) → thermal model → bridges → README documenting every fault
-  and its expected signature.
+  `inject_fault.py` CLI) → thermal model → **tune the servo emulation (PID) once,
+  against the complete plant (actuator + friction)** — acceptance: `example_move.py`
+  completes without tolerance aborts, noting the Stage 1 abort was partly
+  torque-saturation-limited so friction calibration may be part of the fix → bridges →
+  README documenting every fault and its expected signature.
 - **Stage 3 (validation):** smoke test modeled on upstream `test_gz.py` (launch
   headless, move, assert topics) + fault-signature checks (jam → velocity zero +
   effort spike; dropout → stale stamps; derate → larger tracking error).
@@ -272,8 +277,8 @@ workspace `install/setup.bash` currently chains their env hooks.
 
 ## Risks
 
-- PID/effort tuning is empirical; budget one tuning session; values will be refined
-  against real data later.
+- PID/effort tuning is empirical and happens in Stage 2 once the actuator model
+  exists; budget one tuning session; values will be refined against real data later.
 - Per-joint friction split is a literature range (7–12 / 9–15), not exact values —
   start mid-range, tune; try to obtain the Gnad 2026 per-joint table.
 - IMU parameters are chip-level specs (ISM330IS / ICM42688), not UR-published

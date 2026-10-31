@@ -173,9 +173,10 @@ controllers yaml, **not** the URDF — URDF has no standard acceleration-limit a
 </sensor></gazebo>
 ```
 
-Each sensor pins an explicit `<topic>` so its gz transport topic (namespaced
-`/model/<spawn_name>/<topic>`) is stable and the bridge YAML can reference it by name —
-no dependence on gz-sim's default scoped-topic derivation.
+Each sensor pins a **fully qualified** `<topic>` (`/model/ur/<name>`): gz-sim publishes
+explicit sensor topics at root scope, so a bare name would land on `/base_imu` instead
+of the model namespace (verified empirically — this cost a debugging round). The
+`/model/ur/` prefix matches the fixed spawn name and the bridge YAML entries.
 
 Noise paths follow the sdformat14 schemas: `angular_velocity/{x,y,z}` +
 `linear_acceleration/{x,y,z}` for IMU; `force/{x,y,z}` + `torque/{x,y,z}` for
@@ -207,7 +208,8 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
    `gz-sim-imu-system` and `gz-sim-forcetorque-system` plugins — gz-sim does not
    auto-load sensor systems.
 2. **`ur_plant_bringup/config/ur_plant_controllers.yaml`** — effort-mode JTC with
-   per-joint PID gains. Example (starting gains, tuned empirically):
+   per-joint PID gains (seeded values; tuned once in Stage 2 against the complete
+   plant). Example:
 
    ```yaml
    controller_manager:
@@ -242,7 +244,7 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
        joints: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint,
                 wrist_1_joint, wrist_2_joint, wrist_3_joint]
        command_interfaces: [effort]
-       state_interfaces: [position, velocity, effort]
+       state_interfaces: [position, velocity]
        state_publish_rate: 100.0
        action_monitor_rate: 20.0
        allow_partial_joints_goal: false
@@ -258,8 +260,9 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
          wrist_2_joint: {trajectory: 0.2, goal: 0.1}
          wrist_3_joint: {trajectory: 0.2, goal: 0.1}
 
-       # Starting gains, tuned empirically; i_clamp stays well below the
-       # vendor joint torque ratings (150 Nm shoulder/elbow, 28 Nm wrist).
+       # Seeded gains; tuned once in Stage 2 against the complete plant.
+       # i_clamp stays well below the vendor joint torque ratings (150 Nm
+       # shoulder/elbow, 28 Nm wrist).
        gains:
          shoulder_pan_joint:  {p: 4000.0, i: 400.0, d: 50.0, i_clamp: 40.0}
          shoulder_lift_joint: {p: 4000.0, i: 400.0, d: 50.0, i_clamp: 40.0}
@@ -274,13 +277,15 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
        # (unscaled) JTC; the scaled one is the launch default, as upstream
    ```
 
-   Notes on limits: JTC clamps commanded **velocity** to the URDF limits (180 °/s,
-   already in `ur_description`) — nothing to add. **Acceleration** has no URDF
-   attribute and no JTC parameter (UR publishes no accel limits), so effective
-   acceleration limiting comes from the trajectory's quintic-spline interpolation
-   plus the Stage 2 actuator plugin's torque rate limit; `accel_limit` in
-   `plant_config.yaml` is therefore informational for now. The `i_clamp` values
-   bound integrator windup below the vendor torque ratings.
+   Notes on limits: `state_interfaces` must stay `[position, velocity]` — JTC rejects
+   `effort` there (allowed set is `{position, velocity, acceleration}`); effort still
+   reaches `/raw_joint_states` via the broadcaster's state read. JTC clamps commanded
+   **velocity** to the URDF limits (180 °/s, already in `ur_description`) — nothing to
+   add. **Acceleration** has no URDF attribute and no JTC parameter (UR publishes no
+   accel limits), so effective acceleration limiting comes from the trajectory's
+   quintic-spline interpolation plus the Stage 2 actuator plugin's torque rate limit;
+   `accel_limit` in `plant_config.yaml` is therefore informational for now. The
+   `i_clamp` values bound integrator windup below the vendor torque ratings.
 3. **Bridges** — `config/bridges.yaml` in `ur_plant_bringup`, loaded through the
    bridge node's `config_file` parameter (the standard ros_gz_bridge YAML form):
 
@@ -322,7 +327,16 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
    non-zero dynamics on all 6 joints and the three sensor blocks.
 2. Launch headless → `gz topic -l` shows `/model/ur/tcp_fts_sensor`,
    `/model/ur/base_imu`, `/model/ur/tool_accel`; bridged topics publish at ~500 Hz;
-   `example_move.py` moves the arm; lift joints show gravity-holding effort; tune PID.
+   `example_move.py` moves the arm; lift joints show gravity-holding effort.
+   **Sanity check only — the seeded PID gains are not tuned here** (servo-emulation
+   tuning happens in Stage 2 against the complete plant, once the actuator dynamics
+   and friction model are in; adjust gains here only if the arm cannot hold or move).
+
+   **Result (2026-10-31): PASSED with a known limitation.** Sensors publish at 500 Hz;
+   the arm holds the upright pose under the seeded gains; `example_move.py` moves the
+   arm partway before aborting on a joint-4 velocity tolerance — tracking precision is
+   a Stage 2 concern (servo-emulation gains + friction calibration together; note the
+   abort is partly torque-saturation-limited, so gains alone may not fix it).
 3. Smoke-test the `model://ur5e` URI: a throwaway world with
    `<include><uri>model://ur5e</uri></include>` loads the plant, confirming gz-sim
    resolves the URDF-backed model.
@@ -333,6 +347,10 @@ conversion: libsdformat14's `parser_urdf.cc` copies gazebo extensions verbatim
   literature ranges (7–12 Nm Coulomb / 9–15 N·m·s/rad viscous, converted
   empirically), calibrate in sim; the plugin-based Coulomb-Nm friction remains the
   Stage 2 fallback.
+- Friction must leave torque budget for the documented max joint speed
+  (`B·ω_max + C ≪ effort limit`); the literature viscous range only fits the 150 Nm
+  shoulder/elbow joints, so the 28 Nm wrists get reduced seeds (see
+  `plant_config.yaml`). Full friction calibration happens in Stage 2.
 - The F/T wrench is expressed in the `wrist_3_link` frame; the Stage 2 sensors node
   rotates it to `tool0` (constant rotation — see fidelity note above).
 - `ros_gz_bridge` maps `gz.msgs.Wrench` → `geometry_msgs/Wrench` (no header); the
