@@ -46,7 +46,7 @@ ground truth on a separate topic for validation.
 | Decision | Choice |
 |---|---|
 | Placement | **New overlay packages** `ur_plant_*`; upstream clone stays pristine |
-| Motor model | **Effort JTC with PID + custom actuator plugin** (two stages) |
+| Motor model | **Effort JTC with PID + L2 actuator plugin** (PMSM electrical cascade + two-mass flexspline; L1/L0 kept as config fallbacks — decided 2026-11-02) |
 | Sensors | **Noisy encoders + TCP F/T + base 6-axis IMU + tool-flange accelerometer** |
 | Faults | **Runtime fault-injection API** (ROS 2 services), grounded in documented UR error codes |
 | Stop behavior | **Deferred** — faults expose a `severity` field; protective-stop / safety state machine is a later phase |
@@ -170,17 +170,51 @@ workspace `install/setup.bash` currently chains their env hooks.
 
 ### 5. `ur_plant_world` — `actuator_dynamics.cpp` (gz-sim system plugin)
 
-- PreUpdate filter on each joint's `JointForceCmd` set by `GazeboSimSystem`:
-  - first-order motor lag **τ ≈ 5 ms** per joint (≈1–3 ms electrical + 2 ms discrete
-    500 Hz loop) **[estimate — servo bandwidth is not published]**,
-  - torque rate limit (dτ/dt cap),
-  - **saturation at the vendor joint torque ratings** (UR5e: 150/150/150/28/28/28 Nm;
-    per-model tables in `plant_config.yaml`; no public continuous/peak distinction).
-- Gear ratio **101:1** recorded for motor-side modeling; full two-mass
-  motor/flexspline dynamics is out of scope (its effect is folded into τ).
-- Reads a per-joint effort scale factor set by the fault plugin.
-- Fallback if `JointForceCmd` interception conflicts with `gz_ros2_control` write
-  timing: apply corrective forces in PreUpdate.
+Full per-joint actuator cascade (**L2**, decided 2026-11-02): a PMSM electrical
+stage driving a two-mass flexspline model. The plugin keeps a per-joint **motor
+state** (rotor angle/velocity, phase current, bus voltage), integrates it at the
+world's 1 ms step, and applies the resulting joint-side torque to DART — DART
+never sees the stiff gear coupling, only the resolved torque.
+
+Actuator modeling levels (the ladder this component implements; `l1`/`l0` are
+config fallbacks in `plant_config.yaml`):
+
+| Level | Model | Captures | Misses |
+|---|---|---|---|
+| **L0** | first-order lag + torque rate limit + saturation | gross servo bandwidth, saturation | resonance, ripple, windup, motor-side states |
+| **L1** | L0 + rotor ODE + stiffening flexspline k(φ) | two-mass resonance, windup, motor-vs-joint encoder divergence, motor-side friction | electrical detail (current loop, back-EMF, PWM) |
+| **L2** (chosen) | L1 + PMSM electrical stage (current loop, back-EMF, PWM delay, cogging, bus model) | electrical-fault signatures (voltage sag, overcurrent, regen) | semiconductor-level inverter detail |
+
+- **PMSM electrical stage** (per joint):
+  - voltage balance `v = R·i + L·di/dt + k_e·ω_m`, torque `τ_em = k_t·i`;
+    R/L/k_t/k_e from the candidate Kollmorgen TBM2G motor datasheets [OEM]
+    (UR has never publicly confirmed the motor series; τ_e = L/R ≈ 0.9 ms
+    wrist / 1.3 ms J1–3 [L]);
+  - **PI current loop** (~1 kHz bandwidth, tuned) + **PWM transport delay**
+    (one switching period, 10–20 kHz — not published, estimate);
+  - **cogging/torque ripple** as Fourier terms at pole-pair multiples
+    (kinematic-error form from the Madsen thesis [L] + OEM pole/slot data);
+  - **48 V-class DC bus** with regen clamp at 55 V (C56A): `voltage_sag`
+    (C296A44/C50A51) and overcurrent (C59A) faults act on V_bus and the
+    current limit, making the electrical fault family physically implementable.
+- **Two-mass flexspline stage**: rotor ODE
+  `J_m·ω̇_m = τ_em − τ_fs/N − τ_fric,motor` (J_m = 6.4e-5 / 1.2e-5 kg·m² [L])
+  coupled to the joint through the stiffening spring `τ_fs = k(φ)·φ + d·φ̇`,
+  windup `φ = θ_m/N − θ_j`, gear ratio N = 101 [L]; k(φ) from the Madsen
+  thesis UR5e identification (values to be extracted from the thesis figures).
+- **Friction in physical Nm lives here** — joint-side Coulomb/viscous (from
+  `plant_config.yaml`) plus motor-side velocity/load/temperature-dependent
+  friction [L]; the unitless URDF `<dynamics friction>` is neutralized while
+  the plugin is active (Stage 1's URDF values are interim).
+- **Saturation at the vendor joint torque ratings** (150/150/150/28/28/28 Nm)
+  enforced as the current/torque limit; no public continuous/peak distinction.
+- Reads per-joint fault scale factors (effort derate, brake drag, jam braking
+  torque) from the fault plugin.
+- Config fallbacks: `actuator_model: l1` = two-mass without the electrical
+  stage; `l0` = the original first-order lag + rate limit + saturation (kept
+  for A/B experiments).
+- Fallback if `JointForceCmd` interception conflicts with `gz_ros2_control`
+  write timing: apply corrective forces in PreUpdate.
 
 ### 6. `ur_plant_world` — `fault_injection.cpp` (gz-sim system plugin, links rclcpp)
 
@@ -231,7 +265,9 @@ workspace `install/setup.bash` currently chains their env hooks.
 | Effort saturation | 150/150/150/28/28/28 Nm | [V] UR "Max. joint torques" |
 | Velocity limits | 3.1416 rad/s (180 °/s) all joints | [V] user manual |
 | Gear ratio | 101:1 | [L] |
-| Motor lag τ | ~5 ms per joint | [L]+[V] estimate |
+| Rotor inertia J_m | 6.4e-5 (J1–3) / 1.2e-5 (J4–6) kg·m² | [L] Robotica 2024 |
+| Motor electrical τ_e = L/R | 0.9 ms wrist / 1.3 ms J1–3 | [L] derived from candidate-motor datasheets |
+| Flexspline stiffness k(φ) | stiffening spring; values to extract from thesis figures | [L] Madsen |
 | Joint friction | Coulomb 7–12 Nm, viscous 9–15 N·m·s/rad (asymmetric Coulomb) | [L] ranges |
 | Encoder quantization | ~1e-5 rad | derived estimate |
 | Encoder noise | σ ≈ 0.5–1e-5 rad | estimate [NF] |
@@ -251,13 +287,17 @@ workspace `install/setup.bash` currently chains their env hooks.
   [`plan_stage1_description.md`](plan_stage1_description.md).
   Verify headless: `example_move.py` works, tracking error behaves like a
   real arm (finite settling, gravity-holding efforts on the lift joints), tune PID.
-- **Stage 2 (C++ realism):** world plugins (`actuator_dynamics`, `fault_injection`) →
-  sensors package (`plant_sensors` node, `SetFault.srv`, sensor faults, FTS zeroing,
-  `inject_fault.py` CLI) → thermal model → **tune the servo emulation (PID) once,
-  against the complete plant (actuator + friction)** — acceptance: `example_move.py`
-  completes without tolerance aborts, noting the Stage 1 abort was partly
-  torque-saturation-limited so friction calibration may be part of the fix → bridges →
-  README documenting every fault and its expected signature.
+- **Stage 2 (C++ realism):** world plugins (`actuator_dynamics` — the L2 electrical +
+  two-mass cascade above; `fault_injection`) → sensors package (`plant_sensors` node,
+  `SetFault.srv`, sensor faults, FTS zeroing, `inject_fault.py` CLI) → thermal model →
+  **tune the servo emulation (PID) once, against the complete plant (actuator +
+  friction)** — acceptance: `example_move.py` completes without tolerance aborts,
+  noting the Stage 1 abort was partly torque-saturation-limited so friction
+  calibration may be part of the fix → bridges → README documenting every fault and
+  its expected signature. Research sub-tasks feeding the plugin: extract k(φ) from
+  the Madsen thesis figures (in `docs/sources/literature/`), source R/L/k_t/k_e from
+  the Kollmorgen TBM2G datasheets, and (if obtained by then) the Gnad per-joint
+  friction table.
 - **Stage 3 (validation):** smoke test modeled on upstream `test_gz.py` (launch
   headless, move, assert topics) + fault-signature checks (jam → velocity zero +
   effort spike; dropout → stale stamps; derate → larger tracking error).
@@ -268,7 +308,10 @@ workspace `install/setup.bash` currently chains their env hooks.
 ## Out of scope (can be added later)
 
 - Protective-stop / safety state machine (deferred phase, see above).
-- Two-mass motor/flexspline dynamics (folded into τ ≈ 5 ms).
+- Motor thermal-electrical coupling (winding R(T) feedback into the electrical
+  stage) — the thermal model stays first-order and one-way.
+- Semiconductor-level inverter detail (switching transients, dead-time) — PWM is
+  modeled as a transport delay only.
 - Thermal physics beyond a first-order duty-cycle model.
 - Gripper (no gripper description installed).
 - Wrist camera, base vibration model, cable drag.
@@ -277,22 +320,42 @@ workspace `install/setup.bash` currently chains their env hooks.
 
 ## Risks
 
-- PID/effort tuning is empirical and happens in Stage 2 once the actuator model
-  exists; budget one tuning session; values will be refined against real data later.
+- PID/effort + current-loop tuning is empirical and happens in Stage 2 once the L2
+  actuator exists; budget one tuning session; values will be refined against real
+  data later.
 - Per-joint friction split is a literature range (7–12 / 9–15), not exact values —
-  start mid-range, tune; try to obtain the Gnad 2026 per-joint table.
+  start mid-range, tune; adopt the Gnad 2026 per-joint table once it is obtained
+  (accepted as approximate until then — see open questions).
+- The L2 electrical parameters (R, L, k_t, k_e, PWM frequency) come from
+  *candidate* Kollmorgen motors UR has never publicly confirmed — the electrical
+  stage models the right class of servo, not the exact unit; keep them
+  config-tunable and provenance-tagged [OEM]/estimate.
 - IMU parameters are chip-level specs (ISM330IS / ICM42688), not UR-published
   robot values — marked as estimates.
-- DART's interpretation of URDF friction vs physical Nm Coulomb needs a calibration
-  check in Stage 1; plugin-based friction (Stage 2) is the controllable fallback.
+- Stage 2 moves all friction into the actuator plugin in physical Nm (motor-side +
+  joint-side), so DART's unitless URDF-friction interpretation stops mattering once
+  the plugin is active; the Stage 1 URDF values are interim.
 - Upstream updates stay trivial: nothing in `ur_simulation_gz` is modified.
 
 ## Open questions for refinement
 
 - [x] IMU scope — decided: base 6-axis IMU + tool-flange accelerometer.
 - [x] Stop state machine — deferred to a later phase.
-- [ ] Exact per-joint friction/damping split (Gnad 2026 table).
-- [ ] FTS noise anchor: vendor-conservative default confirmed, or literature option?
+- [x] Exact per-joint friction/damping split — decided 2026-11-02: adopt the Gnad
+      2026 per-joint table when it can be obtained; until then the literature
+      ranges plus Stage 2 in-sim calibration are accepted. Friction being "a bit
+      off" the real machine is acceptable for the twin pipeline.
+- [x] FTS noise anchor — decided 2026-11-02: **vendor-conservative (worst-case)**
+      values stay the default (σ_F = 1.0 N, σ_T = 0.05 Nm); the literature model
+      remains a config option. Noise being "a bit off" is acceptable.
+- [x] Actuator modeling depth — decided 2026-11-02: **L2 full electrical** (PMSM
+      current loop + back-EMF + PWM transport delay + cogging) driving two-mass
+      flexspline dynamics, in `actuator_dynamics.cpp`; L1 (two-mass only) and L0
+      (first-order lag) kept as config fallbacks. Rationale: gearbox-wear ripple,
+      motor-vs-joint encoder divergence, voltage-sag and overcurrent faults are
+      motor-side phenomena a lag filter cannot produce, and the twin pipeline
+      needs structurally real actuator dynamics — this is the one place the model
+      must not be approximate.
 - [ ] Fault list priority: which faults matter most for the twin experiments?
 - [ ] Payload: fixed catalog of masses (e.g., 0.5 / 1 / 2 kg) or arbitrary value?
 - [ ] Should the plant also simulate the UR driver's TCP/UART comms latency

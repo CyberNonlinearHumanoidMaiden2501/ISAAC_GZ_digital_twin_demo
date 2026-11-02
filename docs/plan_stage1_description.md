@@ -117,7 +117,10 @@ models:                 # per-model tables ur3e/ur5e/ur10e/ur16e (vendor data)
   # ur3e, ur10e, ur16e: same schema
 
 actuator:               # consumed by the Stage 2 actuator plugin
-  tau_motor:            # first-order motor lag, s per joint (≈5 ms)
+  # Superseded by the L2 design (decided 2026-11-02, parent plan open questions):
+  # the plugin becomes a full PMSM electrical + two-mass flexspline cascade.
+  # This first-order sketch survives only as the `l0` fallback model.
+  tau_motor:            # first-order motor lag, s per joint (≈5 ms, l0 only)
     default: 0.005
   torque_rate_limit: 500.0   # Nm/s, tuned empirically
 ```

@@ -187,8 +187,10 @@ e-series factory presets (extracted from PolyScope `safety.conf`; labeled "sugge
 | Effort saturation | 150/150/150/28/28/28 Nm | [V] |
 | Velocity limits | 3.1416 rad/s (180 °/s) all joints | [V] |
 | Gear ratio (motor-side modeling) | 101:1 | [L] |
-| Motor lag (first-order τ) | ~5 ms per joint (≈1–3 ms electrical + 2 ms loop) | [L]+[V] estimate |
-| Joint friction | Coulomb 7–12 Nm + viscous 9–15 N·m·s/rad (ranges; per-joint split TBD — try to obtain the Gnad 2026 table) | [L] |
+| Motor electrical τ_e = L/R | ≈0.9 ms (wrist) / 1.3 ms (J1–3) | [L] derived from candidate-motor datasheets |
+| Rotor inertia J_m | 6.4e-5 (J1–3) / 1.2e-5 (J4–6) kg·m² | [L] Robotica 2024 |
+| Flexspline stiffness k(φ) | stiffening spring (values in thesis figures) | [L] Madsen |
+| Joint friction | Coulomb 7–12 Nm + viscous 9–15 N·m·s/rad (ranges; adopt the Gnad 2026 per-joint table when obtained) | [L] |
 | Joint encoder quantization | ~1e-5 rad | derived estimate |
 | Joint encoder noise | σ ≈ 0.5–1e-5 rad | estimate [NF] |
 | Joint states / FTS publish rate | 500 Hz | [V] |
@@ -199,7 +201,7 @@ e-series factory presets (extracted from PolyScope `safety.conf`; labeled "sugge
 1. **Component 2 (controllers):** keep 500 Hz CM; the JSB must publish at the full 500 Hz (real driver behavior). Effort limits enter as JTC/motor saturation, not just URDF limits.
 2. **Component 3 (URDF/description):** friction values now grounded (Coulomb/viscous per-joint from §4.1); acceleration limits remain [NF] — use conservative limits derived from speed/stop-time specs and mark as estimate.
 3. **Component 4 (plant_sensors):** encoder quantization 1e-5 rad (was 2π/2^17 ≈ 4.8e-5); publish at 500 Hz. FTS: add **saturation at ±50 N/±10 Nm**, **relative-sensor zeroing service** (`/plant/ft_sensor/zero`, mirroring `~/zero_ftsensor`), slow bias drift; noise σ anchored to precision envelope (σ_F ≈ 1 N, σ_T ≈ 0.05 Nm conservative, or the literature 0.3 N + 100 Hz LP). FTS rate 500 Hz (was 100 Hz in plan).
-4. **Component 5 (actuator plugin):** add gear-ratio-aware motor-side modeling (motor inertia + 101:1) if we want the two-mass effect; at minimum keep τ≈5 ms lag + rate limit + saturation at vendor torques. Servo bandwidth remains a tuning target, not a documented constant.
+4. **Component 5 (actuator plugin):** full **L2 electrical + two-mass** actuator (decided 2026-11-02): PMSM voltage/current dynamics (R, L, k_t, k_e from candidate-motor datasheets), PI current loop + PWM delay, cogging/ripple terms, 48 V-class bus with regen clamp; rotor ODE coupled to the joint through the stiffening flexspline (J_m and k(φ) from the literature above). Servo bandwidth then emerges from the current loop + JTC PID cascade instead of being asserted as a τ≈5 ms lag.
 5. **Component 6 (fault injection):** replace generic fault list with **code-grounded taxonomy** (below); optionally emulate the protective-stop vs Cat-0 distinction and the C163 throttle.
 6. **Plan doc correction:** "no IMU on real UR" is wrong — e-series has internal base IMUs + tool accelerometer (specs unpublished). Keep them out of the exposed suite; note tool accelerometer as optional future work.
 
@@ -222,15 +224,17 @@ e-series factory presets (extracted from PolyScope `safety.conf`; labeled "sugge
 ### 4.4 Deliberately NOT modeled (for now)
 
 - Full safety state machine (stop categories, Recovery mode, safety.conf limits) — large scope; only add if twin scenarios need "robot stops and requires recovery". The fault framework will expose a `severity` field so it can be added later.
-- Two-mass motor/flexspline dynamics — reflected motor inertia through 101:1 can be folded into τ≈5 ms lag; full model only if gearbox-wear signatures need it.
+- Motor thermal-electrical coupling — winding resistance rise with temperature feeding back into the electrical stage; the thermal model stays first-order and one-way.
+- Semiconductor-level inverter detail — switching transients and dead-time; PWM is modeled as a transport delay only.
 - Thermal physics (conduction model) — a simple first-order duty-cycle→temperature model per joint is enough to hit the documented thresholds.
 - Base IMUs / tool accelerometer — no vendor specs exist to ground them.
 
 ### 4.5 Still open
 
-- Exact per-joint friction table (Gnad et al. 2026 — paywalled; ranges only for now).
-- Servo position bandwidth: undocumented → tune τ/rate-limits empirically so step responses look plausible (finite rise time, slight overshoot, ~50–200 ms settling at 500 Hz loop).
-- FTS noise spectrum: pick conservative vendor-anchored values vs literature values.
+- Exact per-joint friction table (Gnad et al. 2026 — paywalled; adopt the table when obtained, ranges + calibration until then).
+- Servo position bandwidth: undocumented → emerges from the L2 current loop + JTC PID cascade; tune the cascade empirically so step responses look plausible (finite rise time, slight overshoot, ~50–200 ms settling at 500 Hz loop).
+- FTS noise spectrum: decided — vendor-conservative worst-case values as default; the literature model remains a config option.
+- L2 electrical parameters (R, L, k_t, k_e, PWM frequency) for the candidate Kollmorgen motors — datasheet-sourced [OEM]; the exact motor series is unconfirmed by UR.
 - Whether to emulate protective-stop/Cat-0 semantics + C163 throttle (Phase 3 candidate).
 
 ## Sources (primary)
