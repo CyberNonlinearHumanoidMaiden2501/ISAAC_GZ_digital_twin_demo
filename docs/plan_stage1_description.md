@@ -1,6 +1,6 @@
 # Stage 1 Plan: Description Files (`ur_plant_description`)
 
-> Status: design ready for implementation — saved 2026-10-25, not yet executed.
+> Status: finished — implemented and verified 2026-10-31 (see Verification).
 > Parent plan: [`plan_realistic_ur_plant.md`](plan_realistic_ur_plant.md).
 > Scope: the robot description (URDF/xacro + generator + config) and its launch
 > integration for Stage 1 (config-level realism, no new C++).
