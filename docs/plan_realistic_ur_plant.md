@@ -297,7 +297,7 @@ config fallbacks in `plant_config.yaml`):
   its expected signature. Research sub-tasks feeding the plugin: extract k(φ) from
   the Madsen thesis figures (in `docs/sources/literature/`), source R/L/k_t/k_e from
   the Kollmorgen TBM2G datasheets, and (if obtained by then) the Gnad per-joint
-  friction table.
+  friction table. Detailed design: [`plan_stage2_realism.md`](plan_stage2_realism.md).
 - **Stage 3 (validation):** smoke test modeled on upstream `test_gz.py` (launch
   headless, move, assert topics) + fault-signature checks (jam → velocity zero +
   effort spike; dropout → stale stamps; derate → larger tracking error).
