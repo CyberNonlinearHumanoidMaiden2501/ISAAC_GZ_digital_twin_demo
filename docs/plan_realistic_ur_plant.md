@@ -287,7 +287,9 @@ config fallbacks in `plant_config.yaml`):
   [`plan_stage1_description.md`](plan_stage1_description.md).
   Verify headless: `example_move.py` works, tracking error behaves like a
   real arm (finite settling, gravity-holding efforts on the lift joints), tune PID.
-- **Stage 2 (C++ realism):** world plugins (`actuator_dynamics` — the L2 electrical +
+- **Stage 2 (C++ realism):** actuator modeled and tested **in Octave first**
+  (reference model in `octave/actuator/`), then ported to the world plugins
+  (`actuator_dynamics` — the L2 electrical +
   two-mass cascade above; `fault_injection`) → sensors package (`plant_sensors` node,
   `SetFault.srv`, sensor faults, FTS zeroing, `inject_fault.py` CLI) → thermal model →
   **tune the servo emulation (PID) once, against the complete plant (actuator +

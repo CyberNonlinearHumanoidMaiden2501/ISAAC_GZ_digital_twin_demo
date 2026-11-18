@@ -1,7 +1,8 @@
 # Stage 2 Plan: C++ Realism Layer (actuator, faults, sensors, thermal)
 
-> Status: DRAFT — Step 1 (actuator modeling) designed 2026-11-18; remaining steps
-> to be added as the implementation order is decided.
+> Status: DRAFT — Step 1 (Octave reference model) and Step 2 (plugin port)
+> designed 2026-11-18; remaining steps to be added as the implementation order
+> is decided.
 > Parent plan: [`plan_realistic_ur_plant.md`](plan_realistic_ur_plant.md).
 > Preceding stage: [`plan_stage1_description.md`](plan_stage1_description.md)
 > — finished 2026-10-31.
@@ -54,7 +55,14 @@
 
 ## Step-by-step breakdown
 
-### Step 1: Actuator modeling — `actuator_dynamics.cpp` (gz-sim system plugin)
+### Step 1: Octave reference model — `octave/actuator/`
+
+The actuator is modeled and tested in **Octave first** (Octave 8.4 + control
+package; MATLAB unavailable), before any C++ — the plugin port in Step 2 is
+validated against this reference. Fixed-step integration at the switching
+period (10 kHz) mirrors the future plugin's sub-step structure, so the Octave
+loop and the C++ loop are the same algorithm. Progression: 1.1 electrical
+stage → 1.2 mechanical stage → 1.3 integrated plant + servo tuning.
 
 **Design decision (2026-11-18): model the PMSM in the d-q frame** — the FOC frame
 every real servo drive runs in, so the plant becomes a literal emulation of the
@@ -153,31 +161,48 @@ offset. Nothing exotic to model.
   friction (standard flexible-joint control partition).
 - The plugin sub-steps the electrical ODE at 10 kHz internally and exchanges
   torque with DART at the world's 1 kHz; DART only ever sees joint-side torque.
-- **Open check (do during 1a):** at max joint speed 180 °/s the motor spins
-  ≈ 101·3.14 ≈ 317 rad/s; back-EMF k_e·ω_m plus the R·i and ω_e·L·i drops must
-  fit under V_dc/√3 ≈ 27.7 V. If not (pending the datasheet Ke), add flux
-  weakening (i_d < 0) to 1b — the reason d-q was chosen.
+- **Flux-weakening check (done 2026-11-18 with [E] seeds):** at max joint
+  speed 180 °/s the motor spins ≈ 101·3.14 ≈ 317 rad/s; back-EMF reaches the
+  V_dc/√3 ≈ 27.7 V ceiling at 346 rad/s — a 1.09× margin, so no flux
+  weakening needed with the seed Kt. Re-verify with the datasheet Ke; if the
+  margin drops below 1×, add i_d < 0 — the reason d-q was chosen.
 
-**Build order** (each layer config-togglable in `plant_config.yaml`; the
+**Build order** (each layer config-togglable in `params.m`; the
 `actuator_model: l1` / `l0` fallbacks remain available throughout):
 
-1. **1a — ideal model:** d-q ODE with an ideal voltage source (no delay, no
-   limit, no ripple). Validates τ_em = Kt·i_q and the electrical time constant
-   L/R against the research values (0.9 ms wrist / 1.3 ms J1–3).
-2. **1b — FOC layer:** the two PI current loops + decoupling, 1.5·T_sw transport
-   delay, V_dc/√3 ceiling. The ~1 kHz current-loop bandwidth *emerges* here
-   instead of being assumed — the point of the whole L2 decision.
-3. **1c — signal/ripple layer:** analytic PWM ripple on the measured current,
-   dead-time offset, cogging Fourier terms on torque (mechanical, but belongs
-   in this layer).
-4. **1d — fault hooks:** V_dc sag + regen clamp, current limit (derate,
-   overcurrent trip), R-drift hook reserved for the thermal model.
+- **1.1 Electrical stage (start here):** `params.m` (per-joint [E] seeds pinned
+  to the research τ_e), `pmsm.m` (d-q ODE), `foc_loop.m` (PI current loops +
+  decoupling + one-sample compute delay + V_dc/√3 ceiling),
+  `test_electrical.m` — validates τ_e = L/R against the research values
+  (0.9 ms wrist / 1.3 ms J1–3), τ_em = Kt·i_q, back-EMF at speed (coupled
+  i_d–i_q steady state), the current-loop crossover *emerging* from the PI +
+  delay (design point f_sw/20 = 500 Hz → 2.5 % overshoot, 0.7 ms settle;
+  800 Hz → ~29 % overshoot — the hot option), and the flux-weakening check.
+  **Result (2026-11-18): PASSED** — τ_e measured 1.30/0.91 ms, i_ss = V/R,
+  τ_em = Kt·i_q, coupled back-EMF steady state matched analytically, voltage
+  ceiling simulated = analytic (346 rad/s).
+- **1.2 Mechanical stage:** `two_mass.m` (rotor EOM + stiffening flexspline),
+  `test_mechanical.m` — steady windup φ = τ/k, the ~16/25 Hz
+  anti-resonance/resonance pair (control-package FRF), motor-vs-joint encoder
+  divergence.
+- **1.3 Integrated plant + servo tuning:** 500 Hz outer JTC-style PID closed
+  around the cascade, tuned **in Octave**; step-response acceptance (finite
+  rise time, slight overshoot, ~50–200 ms settling) and example-trajectory
+  tracking without tolerance aborts.
+- **1c/1d layers** (PWM ripple on the current signal, dead-time offset, cogging
+  Fourier terms, fault hooks) fold in after the ideal layers validate.
 
 Acceptance for step 1 (feeds the overall Stage 2 acceptance): step responses
 show finite rise time + slight overshoot + ~50–200 ms settling at the 500 Hz
-loop, and `example_move.py` completes without tolerance aborts once the PID is
-tuned against the complete plant.
+loop, and the integrated plant tracks the example trajectory without tolerance
+aborts once the PID is tuned.
 
-### Step 2: TBD
+### Step 2: Plugin development — `actuator_dynamics.cpp`
 
-### Step 3: TBD
+Port the validated Octave model to the gz-sim plugin: same 10 kHz sub-step
+loop, same state variables, torque exchange with DART at the world's 1 kHz
+(DART only ever sees joint-side torque). Acceptance: identical step responses
+to the Octave reference for identical inputs. `actuator_model: l1` / `l0`
+fallbacks.
+
+### Step 3: TBD — fault injection → sensors → thermal → README (ordering TBD)

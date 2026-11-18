@@ -1,0 +1,1625 @@
+Received 5 August 2026, accepted 18 August 2026, date of publication 24 August 2026, date of current version 11 September 2026.
+Digital Object Identifier 10.1109/ACCESS.2026.3726682
+
+A Complete Set of Physically Consistent Dynamics
+Parameters for the Universal Robots UR5e and
+UR10e
+DANIEL GNAD 1 , (Member, IEEE), HUBERT GATTRINGER 1 , (Member, IEEE),
+ANDREAS MÜLLER 1 , (Senior Member, IEEE), MARCEL LAHOUD 2 , (Member, IEEE),
+FERDINANDO CANNELLA2 , (Member, IEEE), ROBERTO DI LEVA 3 ,
+MARCO CARRICATO 3 , (Senior Member, IEEE), AND JOHANNES WENNINGER4
+1 Institute of Robotics, Johannes Kepler University Linz, 4040 Linz, Austria
+
+2 Industrial Robotic Facility, Istituto Italiano di Tecnologia, 16163 Genoa, Italy
+3 Department of Industrial Engineering, University of Bologna, 40126 Bologna, Italy
+4 Linz Center of Mechatronics, 4040 Linz, Austria
+
+Corresponding author: Andreas Müller (a.mueller@jku.at)
+This work was supported by the LCM K2 Center for Symbiotic Mechatronics within the framework of Austrian COMET-K2 Program.
+
+ABSTRACT Complete, physically consistent dynamics parameters are required for forward dynamics
+simulation and model-based control methods that explicitly use a separated generalized mass matrix.
+Complete dynamics parameters are not provided by the manufacturer. The available CAD models contain
+neither closed surfaces (and thus no volumetric information) nor density information from which the required
+mass properties could be determined reliably. This paper reports complete reference parameter sets for
+the Universal Robots UR5e and UR10e using an established physically consistent identification approach.
+To obtain representative results, two UR5e and four UR10e robots are identified, and both robot-specific
+and averaged parameter sets are reported. The identified inertia parameters agree well among the robots,
+whereas the friction parameters vary. For the evaluated UR10e trajectory, the torque differences between
+the robot-specific and averaged models remain within approximately 5 % of the maximum joint torques,
+supporting the use of the averaged sets as nominal reference parameters. A forward dynamics simulation
+further demonstrates the use of the complete parameter sets in model-based control. For the evaluated
+slow pick-and-place motion, the Coriolis and centrifugal torque contributions are sufficiently small to be
+neglected. The computational benefit is assessed separately: omitting these terms reduces the mean model
+evaluation time from 8.9 µs to 3.3 µs per sample. Although the averaged parameter sets provide useful
+nominal models, robot-specific friction identification may still be required depending on the specific task.
+Practical details relevant to reproducing the identification are also discussed. This paper should serve the
+robotics community as a reliable and representative reference for physically consistent dynamics parameters
+of the UR5e and UR10e robots.
+INDEX TERMS Industrial robots, manipulator dynamics, model-based control, parameter estimation,
+system identification.
+
+I. INTRODUCTION
+
+The key to modeling and control of a particular robot is
+a set of dynamics parameters. The well-established inverse
+The associate editor coordinating the review of this manuscript and
+approving it for publication was Stavros Souravlas
+
+138706
+
+.
+
+dynamics identification method [1] yields so-called baseparameters pB , which are a linear combination of the full
+set of inertia parameters p. The inverse dynamics model
+in terms of pB can be used to compute a non-linear feedforward control command. Advanced model-based control
+methods, however, such as computed torque [2] (feedback
+
+2026 The Authors. This work is licensed under a Creative Commons Attribution 4.0 License.
+For more information, see https://creativecommons.org/licenses/by/4.0/
+
+VOLUME 14, 2026
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+linearization), passivity-based control [3] or augmented PD
+control [4], [5], require the explicit equations of motion
+(EOM) with a positive definite generalized mass matrix M,
+and thus the full set of inertia parameters. The EOM are
+the basis for forward dynamics simulations and stability
+analysis, where the positive definiteness and symmetry of
+M are crucial. All established robot simulation frameworks,
+such as Pinocchio [6], Gazebo [7], and ROS [8], rely on
+the complete set of parameters, e.g., summarized in URDF
+files. The mass matrix is also necessary in the context
+of physical human–robot interaction (pHRI). The so-called
+reflected mass [9], [10], [11], i.e., the robot inertia apparent
+at the end-effector (EE), requires the mass matrix. It is known
+that the mass matrix M deduced from base-parameters is
+not guaranteed to be positive definite [12], [13], [14], and
+negative values for the rotor inertia may also be obtained [15],
+violating positive definiteness. Such physical inconsistencies
+lead to unstable forward dynamics simulation [16], and
+unstable model-based control [14]. The important point here
+is that the EOM, and a positive definite mass matrix, can
+only be constructed from the full set of physically consistent
+dynamics parameters p. The consistency of inertia parameters
+implies a positive mass m and a positive-definite inertia tensor
+2 fulfilling the triangle inequalities for all bodies. Consistent
+friction coefficients need to be positive. With the full set
+of dynamics parameters, joint reaction forces can also be
+computed and considered in motion planning.
+Several methods for identification of the full set of
+parameters were proposed. Physical consistency is enforced
+by means of linear inequality constraints on rigid body
+parameters [17], [18], [19], [20], including a penalty term
+in the objective function [21], or manifold theory [22].
+In [23] a non-linear parameter transformation is proposed
+to encode the consistency conditions. The advantage of this
+method is that this leads to an unconstrained optimization
+problem. Identified dynamics parameters have been reported
+for the Franka Emika Panda [21], the Kuka iiwa robot [24],
+the Kinova Jaco2 [25], and the Barrett WAM arm [17]. For
+the UR5e and UR10e robots, only identified base-parameters
+have been reported [15], [26], [27], [28]. Although geometric
+dimensions can be extracted from the manufacturer-provided
+CAD models, the link geometries do not consist of closed
+surfaces. Consequently, the volumes, centers of mass, and
+inertia tensors cannot be determined reliably from these
+models. Moreover, complete dynamics parameters are not
+provided by the manufacturer and, to the best of the authors’
+knowledge, have not been reported elsewhere for the UR5e
+and UR10e.
+The main contribution of this paper is a validated reference
+dataset comprising complete, physically consistent dynamics
+parameters for the UR5e and UR10e. The identification
+builds on an established physically consistent parameterization and incorporates robot-specific model assumptions to
+reduce the number of optimization variables. Two UR5e and
+four UR10e robots are identified, and both robot-specific
+and averaged parameter sets are reported. The averaged sets
+VOLUME 14, 2026
+
+FIGURE 1. Schematics of the UR5e and UR10e robots.
+
+are intended as nominal models, while the robot-specific
+results reveal the variability among robots of the same
+model, particularly in their friction parameters. A further
+contribution is an assessment of the relative importance
+of acceleration, gravitational, friction, and Coriolis and
+centrifugal terms. For the evaluated slow handling task, the
+Coriolis and centrifugal torque contributions are sufficiently
+small to be neglected. The associated computational benefit is
+evaluated separately: omitting these terms reduces the mean
+time required to evaluate the EOM by approximately 50 %.
+The paper is organized as follows. Section II derives
+the inverse dynamics model in parameter-linear and baseparameter form. Section III describes the parameterization
+used to ensure physical consistency and introduces assumptions specific to the UR5e and UR10e robots. Section IV
+thoroughly derives the identification process, from designing
+a persistent excitation to the subsequent identification
+procedure. Section V discusses various practical aspects, such
+as the communication setup with the UR robots, required data
+filtering, fading in and out of the excitation trajectory, and the
+regularization values for the identification procedure. These
+regularization values serve as a structural bias in the sense that
+they steer the solution of the underdetermined identification
+problem toward the parameter space corresponding to
+appropriate geometries. The obtained results are presented in
+Sec. VI, together with certain model simplifications and an
+analysis of the contribution of Coriolis and centrifugal forces
+to the EOM. Finally, Sec. VII summarizes the conclusions.
+Throughout the paper, ∥x∥2W = xT Wx denotes the
+weighted norm of the vector x with weight W, and diag(x)
+denotes the diagonal matrix associated with a vector x ∈ Rn .
+II. INVERSE DYNAMICS MODEL
+
+An inverse dynamics model is a mapping that determines
+the control force for a given trajectory. Such a model is
+used to compute the feed-forward term in a model-based
+control scheme. A central result is that this model is linear
+in the dynamics parameters, which is due to the fact that
+the kinetic energy is linear in the inertia parameters and the
+friction models used are linear in the velocity. The inverse
+138707
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+TABLE 1. Geometric parameters of the UR5e and UR10e robots.
+
+dynamics model is briefly described as it serves to determine
+persistent excitation trajectories that will be used in Sec. IV
+for identifying physically consistent parameters.
+A. ROBOT KINEMATICS
+
+The kinematics of a UR5e robot is shown in Fig. 1, which is
+identical to that of a UR10e, but with a different geometry.
+The generalized coordinates q = [qi , i = 1 . . . 6] contain
+the 6 joint angles. The joint frames Fi are located at the
+intersections of the robot axes and the symmetry axis of the
+cylindrical parts. The geometry data for both robots, deduced
+from manufacturer CAD data, are summarized in Tab. 1.
+B. EOM IN PARAMETER-LINEAR FORM
+
+The dynamics of a robotic manipulator can be expressed in
+the well-known form
+M(q)q̈ + C(q, q̇)q̇ + g(q) + f(q, q̇) = τ
+
+(1)
+
+where M(q) denotes the generalized mass matrix, C(q, q̇)q̇
+accounts for the Coriolis and centrifugal forces, g(q)
+represents potential forces, f(q, q̇) models friction, and τ
+comprises the actuation torques. External disturbances are
+omitted because they are not needed for the identification.
+The robot contains N moving bodies connected by N actuated
+one-degree-of-freedom joints, with viscous and Coulomb
+friction being considered. The EOM (1) can be written in the
+parameter-linear form w.r.t. the joint frames as [1]
+τ=
+
+N
+X
+
+Yi (q, q̇, q̈) pi + YD (q̈)pD + Yf (q, q̇) pf = Y p (2)
+
+i=1
+
+with the N × (10N + 3N ) matrix
+
+
+Y = Y1 . . . YN YD Yf ,
+
+(3)
+
+with the 10 inertia parameters of each body i contained in
+
+
+(4)
+pTi = m m cT 2xx 2yy 2zz 2xy 2yz 2xz i .
+Matrix Yi depends only on the kinematics and geometry of
+the robot. The mass is denoted by m, the position vector from
+the joint
+ frameto the center of mass (COM) is described by
+cT = cx cy cz , and the resulting first mass moment is m c.
+The symmetric inertia tensor w.r.t. the joint frame
+
+
+2xx 2xy 2xz
+2 = 2xy 2yy 2yz 
+(5)
+2xz 2yz 2zz
+138708
+
+describes the second moments of inertia. The contribution of
+the lumped rotational inertia of the drives is accounted for by
+YD = diag(q̈) and pD = [2D,i , i = 1 . . . N ], where 2D,i
+denotes the motor inertia w.r.t. the gearbox output.
+Viscous and Coulomb
+are modeled using the
+ friction
+
+N × 2N matrixYf =  Yv YC with the friction parameter
+vector pTf = pTv pTC . Viscous friction follows as Yv pv
+with Yv = diag(q̇) and the corresponding viscous friction
+parameter vector pv = [pvi , i = 1 . . . N ]. Coulomb (static)
+friction is described with YC = diag(sign(q̇)) and the
+Coulomb parameter vector pC = [pCi , i = 1 . . . N ],
+where sign denotes the sign function. Alternatively, tanh(·)
+can be used to approximate the sign function [29]. The
+10N inertia, N lumped rotational inertia, and 2N friction
+parameters
+in the parameter vector pT =
+
+ T T T are summarized
+pi pD pf , i = 1 . . . N , such that (2) holds.
+C. INVERSE DYNAMICS MODEL IN TERMS OF
+BASE-PARAMETERS
+
+Since not all parameters can be identified independently, the
+regressor matrix Y(q, q̇, q̈) is rank deficient [1]. Numerical
+methods, like QR-factorization and SVD, are used to obtain
+an independent set of so-called base-parameters, denoted pB .
+The inverse dynamics model is then transformed to τ =
+YB pB , where YB is a regular matrix obtained from Y, and
+pB is a vector of linearly independent base-parameters. For
+this decomposition, the regressor matrix Y is evaluated at
+random realizations of the joint angles q, velocities q̇, and
+accelerations q̈ within their respective range, and stacked at
+least (10N + 3N )/N times in a matrix Ȳ. The corresponding
+stacked joint torque vector is τ̄ . QR factorization of this
+stacked regressor matrix yields Ȳ = QR, and the matrix
+ȲB is obtained by removing the columns of Q corresponding
+to numerical zeros on the main diagonal of R. It should be
+noted that neither the QR factorization nor the SVD is unique;
+hence, the derived set of base-parameters is not unique.
+The base-parameter vector that minimizes
+1
+(τ̄ − ȲB pB )T Wτ̄ (τ̄ − ȲB pB )
+2
+
+(6)
+
+pB = (ȲTB Wτ ȲB )−1 ȲTB Wτ̄ τ̄
+
+(7)
+
+is obtained as
+
+with the weighting matrix Wτ̄ . The optimal choice for the
+weighting matrix is the inverse of the covariance matrix 6
+of the actuation torque measurement [30]. However, another
+estimator for the torques and hence the covariance matrix
+is needed beforehand [31]. Alternatively, normalizing the
+torques with Wτ̄ = diag(τi,max )−2 achieves good results [32]
+and leads to an equal contribution of all actuated axes, even
+those with lower nominal or maximum torque, to the cost
+function.
+III. PHYSICALLY CONSISTENT PARAMETERIZATION
+
+In many situations, the explicit dynamics parameters in (4)
+are necessary, rather than the base-parameters. In particular,
+VOLUME 14, 2026
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+it is often necessary to have the EOM in the standard form (1)
+of controlled multibody systems. These parameters must be
+physically consistent, which implies that the mass matrix is
+positive definite and symmetric.
+
+coefficient must be positive. Similarly, a new set of friction
+parameters π Tf = β1 . . . βN σ1 . . . σN is introduced [23]
+using the transformation pvi = eβi , pci = eσi , i = 1 . . . N .
+
+A. TRANSFORMATION TO PARAMETERS THAT ENSURE
+CONSISTENCY
+
+The following model assumptions concern the location of the
+COM and the symmetry of the inertia tensor and are based on
+the shapes of the links comprising the UR robots. Restricting
+the location of the COM to the symmetry axis and assuming
+symmetry of the inertia tensor provide a simple yet efficient
+way to reduce the number of required inertia parameters.
+
+B. MODEL ASSUMPTIONS
+
+Physical consistency for a rigid body is ensured using the 4×4
+inertia matrix [33]
+
+
+2̄
+mc
+,
+(8)
+M̄ =
+m cT
+m
+where 2̄ = 21 tr(2)I − 2 is Binet’s inertia tensor [34]
+and the identity matrix I. The inertia matrix M̄(pI ) is linear
+w.r.t. the 10 inertia parameters pI in (4). In the following,
+subscript (·)I is used to refer to the 10 inertia parameters, but
+will be dropped later for simplicity. The inertia parameters
+pI are physically consistent if and only if M̄(pI ) is positive
+definite [19]. Positive definiteness of M̄ ensures a positive
+mass m, and positive definiteness of Binet’s inertia tensor
+accounts for the triangle inequalities λ1 +λ2 > λ3 , λ2 +λ3 >
+λ1 , λ3 + λ1 > λ2 , where λi , i = 1, 2, 3 are the eigenvalues of
+the inertia matrix 2 in (5), i.e. λi are the principal moments
+of inertia.
+The positive definite inertia matrix M̄(pI ) can be expressed
+in terms of a log-Cholesky factorization M̄ = UT U using the
+triangular matrix U. Parameterization of this triangular matrix
+U(π) with another set of 10 parameters
+
+
+π TI = α d1 d2 d3 s12 s23 s13 t1 t2 t3
+(9)
+and comparison of M̄(pI ) with M̄(π I ) yields the expression of
+the dynamics parameters in (4) [23]
+pI (π I ) = e2α [t12 + t22 + t32 + 1, t1 ed1 , t1 s12 + t2 ed2 ,
+t1 s13 + t2 s23 + t3 ed3 , s212 + s223 + s213 + . . .
+e2d2 + e2d3 , s212 + s213 + e2d1 + e2d3 , −s12 ed1 ,
+− s12 s13 − s23 ed2 , −s13 ed1 ].
+
+(10)
+
+The thus-defined inertia parameters are always physically
+consistent since the parameter transformation (10) ensures
+the above conditions for physical consistency. It is to be
+noted that this transformation describes a deformation of
+a reference body to obtain physically consistent inertia
+parameters of another body. Consequently, it is not possible
+to omit any inertia entries, as doing so would yield a
+physically infeasible body. The variables d1 , d2 , d3 represent
+a stretch, s12 , s23 , s13 correspond to a shear, t1 , t2 , t3 denote
+a translation, and α refers to a scaling of the density of the
+reference body. For a detailed explanation and derivation of
+the transformed parameters π, the reader is referred to [23].
+To account for the lumped rotary
+inertia of the drives, the
+
+transformed parameter π TD = ψi , i = 1 . . . N is introduced
+with the transformation 2Di = eψi , i = 1 . . . N . This
+ensures a positive lumped drive inertia. The only condition
+for physical consistency of the friction parameters is that each
+VOLUME 14, 2026
+
+1) MOMENTS OF DEVIATION
+
+It is usually assumed that the reference frame of each rigid
+body is aligned with the principal-axis frame. This alignment
+allows the deviation moments within (5) to be omitted.
+Setting the deviation moments to zero, and comparing (10)
+and (4) yields s12 = s23 = s13 = 0 and further
+
+
+2
+
+t1 + t22 + t32 + 1
+m
+m cx 
+
+
+t1 ed1
+
+
+
+
+d2
+m cy 
+
+
+t
+e
+2
+
+
+
+
+2α 
+d3
+
+.
+m
+c
+t
+e
+p=
+=
+e
+(11)
+3
+ z
+
+
+ 2xx 
+ e2d2 + e2d3 
+
+
+
+
+ 2yy 
+ e2d1 + e2d3 
+2zz
+e2d1 + e2d2
+This reduced parameter vector without the deviation
+moments is the starting point for all further simplifications.
+2) FIRST LINK
+
+The first link performs a one-dimensional rotational motion
+according to q1 . The only component of the parameter vector
+p1 contributing to the EOM is the rotational inertia 2zz .
+Therefore, only the rotational inertia 2zz is used for the
+identification. To describe this positive inertia, the same
+transformation as for the lumped drives is used; hence, the
+only required parameter for the first link is π1 = [ψ].
+3) SECOND AND THIRD LINK
+
+The COM of the second link is assumed to be located along
+the z-axis of frame F2 . Setting m cx = m cy = 0 yields
+t1 = t2 = 0 according to (11). Assuming symmetry along
+the z -axis motivates the simplification 2xx = 2yy ; this
+implies d1 = d2 . The remaining
+parameters
+required for
+
+
+the second link are π 2 = α d1 d3 t3 . Based on the same
+assumptions and simplifications,
+the third link is described
+
+with π 3 = α d1 d3 t3 .
+4) FOURTH AND FIFTH LINK
+
+The joint frame F4 is located on the third link. The first
+assumption is that the COM is located along the y-axis of
+this frame. Similar to before, this yields t1 = t3 = 0 based
+on (11).
+ The necessary
+ parameters for the fourth link are
+π 4 = α d1 d2 d3 t2 . The fifth link is essentially identical to
+the fourth link, as seen in Fig. 1. The COM is assumed to be
+138709
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+along the z-axis of frame
+ F5 . To account
+ for this, the required
+parameters are π 5 = α d1 d2 d3 t3 .
+5) SIXTH LINK
+
+The attachment flange (force/torque sensor) at the robot’s
+EE can be interpreted as a small cylindrical plate. Assuming
+symmetry such that 2xx = 2zz yields d1 = d3 , and
+assuming that the COM is located along the y -axis gives
+t1 = t3 =
+parameters for the sixth link
+ 0. The remaining
+
+are π 6 = α d1 d2 t2 .
+IV. IDENTIFICATION
+
+This section presents the complete workflow used to identify
+dynamics parameters from measured robot trajectories.
+First, the design of persistent excitation trajectories and
+the identification procedure are described, followed by the
+averaging of the robot-specific parameter sets.
+A. PERSISTENT EXCITATION TRAJECTORIES
+
+The excitation trajectory shall persistently excite the dynamics parameters for the identification procedure [35], [36],
+[37]. It is assumed that a persistent excitation for the
+base-parameters is also persistent for the complete set of
+dynamics parameters. Different cost functions with different
+physical interpretations reflecting persistency are reported
+in [38]. All of these cost functions require the full-rank
+regressor matrix YB associated with the base-parameters.
+A truncated Fourier series [36], [37]
+nF
+X
+[ai,k sin(ω0 kt) + bi,k cos(ω0 kt)],
+qi = bi,0 +
+
+(12)
+
+k=1
+
+is suggested to express the i-th joint trajectory. The coefficients ai,k , k = 1 . . . nF , bi,k , k = 0 . . . nF and the base
+frequency ω0 are determined such that the motion leads to
+a persistent excitation. This yields the optimization
+ 
+
+
+min log cond(YTB YB ) − w∥q̇∥Wq̇
+(13)
+a,b,ω0
+
+s.t. qmin ≤ q ≤ qmax , |q̇| ≤ q̇max , |q̈| ≤ q̈max
+no collisions.
+
+(14)
+(15)
+
+The upper and lower limits of the joint angles, speeds, and
+accelerations are denoted with (·)max and (·)min , respectively.
+The scalar w in combination with the weighting matrix Wq̇ =
+diag(q̇max )−2 is used to ensure sufficiently high velocities and
+aid the identification of friction. If no collision avoidance
+is necessary, a recently published toolbox BIRDy [39] can
+easily compute various persistent excitation trajectories for
+serial robots.
+The BIRDy toolbox [39] was used to obtain the persistent
+excitation trajectories for the UR5e; no collision constraints
+were considered. Two UR10e robots are mounted on a
+moving platform next to each other and share a common
+workspace, hence the optimization (13) must be solved considering possible collisions. The bullet physics library [40]
+was used to compute the collision avoidance constraints. The
+138710
+
+optimization problem (13) was solved with MATLAB using
+fmincon. For convenience, the same excitation trajectories
+were used for the other two UR10e robots, which do not have
+the same collision constraints.
+B. IDENTIFICATION PROCEDURE
+
+A persistent excitation trajectory is executed, and the motion
+and torques are recorded. The sampled data are used to evaluate and stack Y(q, q̇, q̈) and τ to obtain Ȳ and τ̄ . The equation
+Ȳp (π) = τ̄ is an under-determined singular system, which
+has no unique solution for either p or π , since the rank
+of Ȳ is equal to the number of base-parameters. A unique
+solution is defined by prescribing regularization values preg ,
+2
+and requiring that Ȳp(π) − τ̄ W be minimized. Together
+τ̄
+with the original equation, this gives rise to the optimization
+
+γLS
+2
+Ȳp(π) − τ̄ W
+min
+τ̄
+π
+2ns
+N
+X
+2
++
+γreg,j pj (π j ) − preg,j W
+p
+
+j=1
+2
++ γreg,D pD − preg,D W + γreg,f
+p
+
+2
+pf − preg,f W
+p
+
+s.t. 0.8 mnom,i ≤ mi ≤ 1.2 mnom,i , i = 2 . . . 6
+
+
+(16)
+(17)
+
+from which the parameters π are obtained. The matrix Ȳ
+consists of the stacked regressor matrices Y evaluated along
+the identification trajectory. Analogously, τ̄ comprises the
+measured motor torques. The number of samples used for
+the identification is denoted by ns , and the squared torque
+error is weighted by a scalar tuning factor γLS . The weighting
+matrix Wτ̄ = diag(τi,max )−2 is used to obtain a dimensionless
+error. This normalizes the torque error and further improves
+the estimation result for actuators with lower torque.
+For the regularization, the squared relative error is used
+and weighted by γreg,j , j = 1 . . . N for the rigid body inertia,
+γreg,D for the lumped drive inertia, and γreg,f for the friction
+coefficients. The identification result will be closer to the
+regularization value i.e., to the structural bias, the smaller the
+LS
+is. If high-quality CAD data were available, it could
+ratio γγreg
+be used as prior knowledge for regularization. To avoid a
+dominant bias, the regularization values are usually chosen
+LS
+so that γγreg
+> 1 unless high-quality priors are available. Only
+the constraints (17), limiting the link masses, are included,
+where mnom is the nominal value from the manufacturer’s
+datasheet. With the simplification presented in Sec. III-B,
+for the UR5e and UR10e, only 35 optimization variables
+are needed, whereas the base-parameter vector contains
+52 elements. The regularization values preg are discussed
+in Sec. V-D and used as initial values for the numerical
+minimization. The transformed regularization/initial values
+2
+π 0 are obtained as π 0 = arg minπ p(π) − preg W by
+p
+minimizing the squared relative error with the diagonal
+matrix Wp = diag(preg )−2 . The minimization problem (16)
+was solved in MATLAB using fmincon and Yalmip [41].
+VOLUME 14, 2026
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+identification of the individual robots, where the average is
+taken according to the number of samples.
+It must be checked whether the averaged parameters
+fulfill the triangle inequalities. As discussed in Sec. III-B,
+a principal-axes frame is assumed and the obtained inertia
+moments 2xx , . . . in 2 can directly be used in the triangle
+inequalities. Denote with 1 2j ,2 2j , j ∈ {xx, yy, zz} the
+principal moments of inertia of two bodies, and with 2̄j
+their average. Adding the first triangle inequality for the two
+bodies yields
+1
+
+2xx +2 2xx +1 2yy +2 2yy >1 2zz +2 2zz
+
+22̄xx + 22̄yy > 22̄zz .
+
+FIGURE 2. Flowchart of an inverse dynamics identification procedure.
+
+Solving the optimization (16) took an average of about 7 s
+over 100 iterations on an Intel Core i7-8700 CPU running at
+3.2 GHz. Figure 2 graphically summarizes the main steps of
+an inverse dynamics identification.
+C. PARAMETER AVERAGING
+
+As the EOM (1), and thus the regression problem (2), are
+linear in p, it seems natural to either take the average
+of solutions p of the linear regression problem obtained
+for different robots or to construct an overall regressor
+matrix from the recorded samples of the different robots.
+In the following, averaging is used. To justify this, consider
+two robots i = 1, 2. Let ȲB,i be the regressor matrix
+obtained from the recorded motion, and τ̄ i be the recorded
+motor torque of robot i, each comprising ni samples. The
+overall regressor matrix accounting for the two trajectories is
+
+
+¯ = n1 ȲT n2 ȲT T , with n := n + n
+introduced as Ȳ
+B
+1
+2
+n B,1 n B,2
+
+T
+and the corresponding torque vector is τ̄¯ = nn1 τ̄ T1 nn2 τ̄ T2 .
+The factor nni is used to achieve equal contributions from
+either trajectory. The solution of the overall regression
+problem is
+¯ T W Ȳ
+¯ −1 ¯ T
+¯
+pB,12 = (Ȳ
+B τ B ) ȲB Wτ τ̄
+−1
+
+n2
+n2
+= n21 ȲTB,1 Wτ ȲB,1 + n22 ȲTB,2 Wτ ȲB,2
+
+
+n2
+n2
+× n12 ȲTB,1 Wτ τ̄ 1 + n22 ȲTB,2 Wτ τ̄ 2 .
+(18)
+The weighting matrix Wτ is the same for robots of the same
+type. It is assumed that the robots have identical kinematics
+and geometry. Assuming further that both robots execute
+the same trajectory (i.e. ȲB,1 = ȲB,2 = ȲB ), the above
+solution becomes pB,12 = nn1 pB,1 + nn2 pB,2 , with pB,i =
+(ȲTB,i Wτ ȲB,i )−1 ȲTB,i Wτ τ̄ i . This shows that, under the above
+assumptions, the solution pB,12 of the overall regression
+problem is the average of the parameter vectors obtained by
+VOLUME 14, 2026
+
+(19)
+
+The averaged second inertia moments thus satisfy the triangle
+inequality 2̄xx + 2̄yy > 2̄zz . Hence, averaging physically
+consistent inertia parameters is always physically consistent.
+The above arguments motivate using the sample-averaged
+parameters as a nominal set of parameters. The assumption
+of (sufficiently) identical geometries is valid, while the
+trajectories are usually different. The measurement noise and
+other effects, and thus the significance of the realizations are
+different. Nevertheless, the average has been shown to be
+applicable (see Sec. VI).
+V. PRACTICAL ASPECTS FOR IMPLEMENTATION
+
+Successful application of the proposed identification procedure requires several practical considerations. These include
+trajectory control and data recording, data filtering, fading
+in and out of the excitation trajectory, determining the
+regularization values, and preparing the experiments to
+ensure repeatability.
+A. TRAJECTORY CONTROL AND RECORDING
+
+The robots used for identification differ in their installation
+setup, rate of use, and control and communication systems.
+Two UR5e robots, denoted UR5e-1 and UR5e-2, and four
+UR10e robots, referred to as UR10e-1 to UR10e-4, were
+used.
+Both UR5e robots were operated at 500 Hz using the
+libraries from SDU Robotics [42] on a PC running Ubuntu
+with a real-time kernel. Using this library, the control
+commands were continuously sent to and measurements were
+obtained from the UR controller. This communication link
+has well-known issues, e.g. real-time operation is violated
+when the UR’s internal controller cannot handle the control
+requests. This was observed in the measurements. Occasionally, samples were lost, and the timestamps of consecutive
+samples were inconsistent. Reducing the sampling frequency
+to fS = 125 Hz reduced these errors, but did not eliminate
+them completely. Furthermore, physically impossible outliers
+were observed in the motor torque measurements. These
+outliers had no noticeable consequences for the identification
+results.
+The UR10e-2 was controlled using a custom ROS
+framework, with a control node implemented in C++, and
+138711
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+running on Ubuntu with a real-time kernel. The desired joint
+velocities were sent to the robot at a frequency of 500 Hz by
+publishing the commands on the joint_group_vel ROS topic.
+The measurements of the joint angles, velocities, and motor
+currents were exported by subscribing to the joint_states ROS
+topic.
+For the UR10e-1, UR10e-3, and UR10e-4 robots, communication between the UR’s internal controller and an external
+PC was avoided. The joint angles of the desired trajectory
+were sampled and written to a UR-script using the servoj
+command. A look-ahead horizon of 30 ms and a gain of
+1500 were used as settings for this control command. The
+generated text file was loaded as a program directly using
+the UR’s teach pendant (hand-held control device). The
+measurements were accessed using the RTDE library and a
+buffer to avoid data loss.
+It is concluded that the real-time communication with
+the UR controller is the most volatile approach. The RTDE
+library (which must be used in all control schemes) did
+not provide a reliable real-time-capable connection for data
+recording. The observed time differences of consecutive
+samples and unrealistic outliers of the motor torque measurement require manual post-processing (smoothing and lowpass filtering). The RTDE library can still be used for data
+recording, but only in combination with a buffer. No missing
+time samples or outliers were observed for this setup. The
+described ROS communication achieved a sufficiently good
+connection during trajectory tracking and data recording.
+No outliers of the motor torque measurement were observed.
+In conclusion, creating a UR program to be executed by
+the robot is deemed to be the most reliable approach for
+the purpose of identifying dynamics parameters. In that
+case, the only required hardware for the data recording task
+is a standard office PC. It should be remarked that the
+identification procedure does not rely on accurate tracking
+of the identification trajectories. The important condition is
+merely that the actual executed motion (joint trajectory q(t)
+and the corresponding torques τ (t)) can be measured.
+B. DATA FILTERING
+
+The regressor matrix Y(q, q̇, q̈) depends on the joint angles,
+velocities, and accelerations. The RTDE library provides
+access to the internal time vector and measurements of
+the joint angles, velocities, and motor currents, among
+other quantities, for all setups. The joint acceleration has
+to be derived by numerical differentiation. The MATLAB
+command filtfilt, applied with a realizable first-order differentiation filter provides a convenient way to compensate
+for the effect of group delay. To cope with the previously
+described outliers and the effects of numerical differentiation,
+a smoothing filter (moving average filter) was applied to the
+derived joint accelerations and motor current measurements.
+The motor torque constants used for the UR5e and UR10e
+and the known gear ratios iG = 101 (the same gear ratio for
+all joint sizes) are used to obtain the actuation torques τ .
+138712
+
+C. FADING IN/OUT OF THE EXCITATION TRAJECTORY
+
+The optimized excitation trajectory is described by a
+truncated Fourier series. Accordingly, the joint velocities
+and accelerations are non-zero at the start and end of the
+trajectory. A smooth transition from standstill to the trajectory
+is required to avoid the excitation of unwanted vibrations.
+Some authors [27], [43] impose additional constraints on
+the Fourier coefficients for the optimization to obtain zero
+velocity at the beginning and end of the excitation trajectory.
+However, this may still lead to high accelerations at the start
+and end of the trajectory, and to unwanted vibrations. This
+can be avoided by smoothing the excitation trajectory at the
+start and end.
+An efficient strategy is to (re)parameterize the excitation
+trajectory [44] using a path parameter σ (t) which represents
+a transformed time. This yields the joint trajectory
+q = q(σ ), q̇ = q′ (σ )σ̇ , q̈ = q′′ (σ )σ̇ 2 + q′ (σ )σ̈ ,
+where ()′ denotes the derivative w.r.t. the path parameter
+σ and ()˙ the derivative w.r.t. time t. The derivatives
+w.r.t. the path parameter are directly available from (12).
+At start and end of the trajectory, σ̇ (t) < 1 is required,
+while during the trajectory, σ̇ (t) = 1 holds. Various
+time-scaling methods fulfilling these requirements have been
+reported [45]. A trajectory with sin2 acceleration profile for
+the path parameter with σ̇max = 1 s−1 , σ̈max = 4 s−2 was
+used.
+D. REGULARIZATION VALUES
+
+The regularization values in (16) allow a unique solution to be
+obtained in which the parameters are close to certain nominal
+values. Little reliable data is available for the UR robots.
+For the links, the manufacturer does provide approximate
+values of mass and COM positions, which are expressed in
+different frames than those in Fig. 1. No information about
+the inertia moments is available. A straightforward way to
+compute the necessary regularization values is to consider
+the links as homogeneous cylinders. Then the regularization
+values preg are obtained using the formulae 21 mR2 and
+1
+2
+2
+12 m(L + 3R ) for the inertia moments, with mass m, radius
+R, length L, and application of the parallel-axis theorem. For
+all links, characteristic dimensions can be extracted from the
+available CAD data and combined with the mass m from
+the manufacturer’s datasheet to compute the regularization
+values preg . Since the CAD models do not provide closed link
+geometries, they cannot be used to calculate the required mass
+properties directly. It should be noted that the assumption of
+a homogeneous, symmetric body might sound too restrictive
+to a critical reader. However, based on our many years
+of experience, allowing a slight shift of the COM away
+from the symmetry axis only increases the number of
+parameters to be identified and does not yield any noteworthy
+improvement in the inverse dynamics identification. Again,
+a systematic sensitivity analysis would be required to confirm
+this statement. Such an investigation would require evaluating
+VOLUME 14, 2026
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+different combinations of regularization values, geometric
+priors, excitation trajectories, and robustness criteria and
+is therefore beyond the scope of the present work, whose
+objective is to provide validated reference parameter sets
+rather than to develop or compare regularization strategies.
+However, values of the lumped rotor inertia of the motors
+for the different joint sizes are stated in the config files
+of the UR robots. The gear ratio iG = 101 is the same
+for all joints. Multiplication of the lumped rotor inertia
+with the squared gear ratio yields the motor inertia w.r.t.
+the gearbox output. Since these values are provided, the
+drive-inertia vector pD is fixed to these values and excluded
+from the identification. The assumed viscous and Coulomb
+friction model f is independent of the rigid body model
+M(q)q̈ + C(q, q̇)q̇ + g(q) and so are the friction coefficients
+in the base-parameter solution. Hence, the identified friction
+coefficients pf from the base-parameter vector pB are used
+for the regularization of the friction coefficients in (16).
+
+TABLE 2. Identified rigid body inertia values of the two UR5e robots.
+
+E. EXPERIMENT PREPARATIONS FOR REPEATABILITY
+
+It is well known that temperature affects friction. To reduce
+these temperature effects on the identification of friction, the
+robots were powered on for some time before the identification to preheat the motors. Furthermore, the trajectory
+was executed a few times before recording the data used
+for identification to account for the warming up of the
+harmonic-drive gears. For more details regarding the effects
+of temperature on friction, the reader is referred to the existing
+literature [46], [47], [48], since this is not the main topic of
+this paper.
+
+TABLE 3. Inertia and identified friction coefficients of the drives w.r.t. the
+gearbox output of the two UR5e robots.
+
+VI. IDENTIFICATION RESULTS
+A. UR5e
+
+The results of the identification for the rigid body parameters
+are summarized in Tab. 2, and the identified values for
+the drives are stated in Tab. 3. The torque constants
+from [43] are included for completeness. The same control
+setup is used for the identification and verification. To
+verify the identification, another optimized Fourier trajectory
+is executed and the recorded and computed torques are
+compared. Figure 3 shows the actuation torques τ for the
+verification trajectory. The peaks in the actuation torques
+τ2 , τ3 , τ4 just before 8 s, and for τ6 between 4 s and 5 s are
+examples of the outliers mentioned in Sec. V-A. The inverse
+dynamics approximation using the base-parameters and the
+proposed model based on physically consistent dynamics
+parameters are in good agreement. The computed torques
+derived from the joint-angle measurements do not contain
+the outliers observed in the measured joint torques. The
+joint-angle measurements showed only missing samples,
+not such outliers. When using the numerical differentiation
+proposed in Sec. V-B, additional low-pass filtering is applied.
+Hence, the torques derived from the joint measurements do
+not show unrealistic outliers. The locations of the COMs
+of links 2, . . . , 6 are approximately at their respective
+VOLUME 14, 2026
+
+geometric centers, which verifies the quality of the obtained
+identification results. No COM can be identified for the first
+link.
+UR robots are modular; they are assembled from links
+and drives of categorized sizes. The first three and last three
+motors of the UR5e are of the same size, respectively. The
+viscous friction values of the first three drives vary from
+9 Nms/rad to 15 Nms/rad and the Coulomb friction values
+from 7 Nm to 12 Nm. This yields a standard deviation of
+about 4 Nms/rad for the viscous friction values and almost
+3 Nm for the parameters of the static Coulomb friction. The
+friction parameters of the last three drives are different for the
+two UR5e robots but within a similar range. Clearly, motors
+of the same type can show drastically varying friction. This
+is also attributed to the rather different usage histories of the
+robots.
+Figure 4 shows the actuation torques τ obtained with the
+dynamics parameters identified for the two robots as well as
+the torques when using the averaged parameters. The results
+138713
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+FIGURE 3. Verification of the actuation torques τ for the UR5e-1. The root
+mean squared error (RMSE) for the
+and the
+ base-parameter identification
+
+proposed identification is eT
+rms = 3.7 7.2 3.9 0.9 0.7 0.9 Nm.
+
+for τj , j = 1, 2, 3 are similar, despite the different friction
+coefficients, whereas the results for τj , j = 4, 5, 6 exhibit
+larger differences. Identifying the parameters of the last
+three links, which form the wrist, is known to be difficult
+because of their small mass. The maximum absolute values
+τj , j = 4, 5, 6 are significantly smaller and hence the small
+absolute error appears larger than for the first three axes. The
+trend of the torques is the same for both sets of dynamics
+parameters and the averaged set. It is concluded that the
+averaged dynamics parameters are sufficient to account for
+both robots.
+B. UR10e
+
+The identified rigid body dynamics parameters of the four
+UR10e robots are summarized in Tab. 4. The drive inertia,
+motor torque constants, and identified friction parameters
+are shown in Tab. 5. Again, the location of the COM of
+each of these five links is near the respective geometric
+center. Again, the most noticeable differences appear for
+the friction coefficients. The actuation torques obtained
+with the base-parameter inverse dynamics model and with
+the physically consistent parameters match very well for
+all four robots. Figure 5 shows the verification results
+for one of the UR10e robots. The RMS error erms (p) of
+the proposed identification is slightly larger than the error
+erms (pB ) obtained with the base-parameter method, which
+was already discussed in [14]. The verification results are
+equivalent for the other three UR10e robots.
+138714
+
+FIGURE 4. Comparison of the actuation torques τ obtained with the two
+different parameter sets for the UR5e, and with the averaged parameters.
+
+Comparison of the identified rigid body inertia for the
+UR5e and UR10e shows that the rotational inertia of
+link 1 (base link), 2zz , of the UR10e is smaller than the
+identified value for the UR5e, although the UR10e is larger.
+Approximating the base link by a hollow cylinder and
+computing the inertia moment, shows that the identified
+values for the UR10e robots are reliable. The high value for
+2zz for link 1 of the UR5e is indirectly due to the rotor
+inertia provided in the UR5 config file, which may be put
+into perspective.
+As for the UR5e, the values of inertia parameters are
+approximately the same, whereas the friction coefficients
+vary. Figure 6 shows the computed actuation torques τ when
+using the parameters identified for the four UR10e robots
+and when using the averaged parameters. The differences of
+the results are caused by the varying friction coefficients.
+The inverse dynamics obtained with the averaged parameters
+match those obtained with the four identified parameter sets
+well. The different friction coefficients may be explained
+by production tolerances of the drives, gears, and bearings,
+wear, different greases inside the gears, and the different
+operating hours of the robots. The two robots UR10e-1 and
+UR10e-2 have by far the most operating hours, and UR10e-4
+has the fewest. The robots with the most operating hours
+show smaller values for the identified friction coefficients.
+Possible causes for the variation of the friction coefficients
+have been stated, but their potential impacts have not.
+Notably, the resulting friction torques and, hence, the required
+actuation torques τ for a desired motion are affected.
+VOLUME 14, 2026
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+TABLE 4. Identified inertia values of the six rigid bodies of the UR10e
+robots. The sample standard deviation across the four robots is denoted
+by σ (·).
+
+The aim of model-based control schemes is to improve
+control performance. If the actual friction differs from
+the friction modeled using the available coefficients, this
+affects the control performance via the feed-forward path. A
+persistently exciting Fourier trajectory is used to evaluate the
+inverse-dynamics models obtained for the four UR10e robots.
+For each robot, the generalized torques τ obtained using
+the averaged UR10e parameter set are subtracted from those
+obtained using the robot-specific parameter set. Figure 7
+shows these torque differences scaled w.r.t. the maximum
+motor torque of each joint. Because the identified inertia
+parameters are very similar, the observed torque differences
+are primarily attributed to the differences in the friction
+coefficients. The scaled differences remain below 5 % for
+all joints, except for a negligible exceedance during a brief
+VOLUME 14, 2026
+
+TABLE 5. Inertia, motor torque constants, and identified friction
+parameters of the drives w.r.t. the gearbox output of the UR10e robots.
+The standard deviation is denoted by σ (·).
+
+FIGURE 5. Comparison of the actuation torques τ for the verification of
+the UR10e-4.
+The base-parameter identification
+achieved an error
+
+
+eT
+rms = 3.08 1.91 1.67 0.60 0.51 0.83 Nm whereas the proposed
+identification
+yields the error
+
+
+eT
+rms = 3.16 2.11 1.75 0.68 0.54 0.77 Nm.
+
+time interval for joint 3. A similar result was obtained using
+another optimized Fourier trajectory. For slower trajectories,
+the differences become even smaller.
+The varying friction coefficients require a more detailed
+discussion. In principle, their influence could be investigated
+using a formal sensitivity analysis based on the columns of
+the model matrix Y in the parameter-linear EOM (2) and
+a suitably chosen column norm. However, the result would
+138715
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+FIGURE 6. Comparison of the actuation torques τ computed with the four
+different sets of dynamics parameters, and with the averaged parameters
+for the UR10e.
+
+depend directly on the selected motion and the chosen norm.
+In particular, a persistent excitation trajectory is an extreme
+case because it intentionally contains higher joint velocities
+to improve the identification of friction and is therefore
+not representative of every application. For this reason, the
+practical effect is assessed directly using the per-robot torque
+differences in Fig. 7. In a model-based feed-forward plus
+PD control scheme, the feedback controller compensates for
+the remaining model error, while the mismatch between the
+modeled and actual friction affects the feed-forward torque.
+The averaged parameter set therefore provides a suitable
+nominal model. Robot-specific friction identification may be
+required for high-accuracy feed-forward control.
+C. MODEL-BASED CONTROL AND FORWARD DYNAMICS
+
+To demonstrate the significance of physically consistent
+dynamics parameters, a forward dynamics simulation in
+combination with different model-based control laws is
+discussed. Solving the forward dynamics amounts to solving
+the ODE (1). To this end, the EOM are written in the explicit
+form
+q̈ = M(q)−1 (Bu − (C(q, q̇)q̇ + g(q) + f(q, q̇))
+
+(20)
+
+where B denotes the input matrix and u denotes the control
+input. It is important to compute the mass matrix M(q, p)
+in (20) from the physically consistent parameters p to
+ensure that it is positive definite. As a preliminary check,
+one thousand random realizations of the joint variables q
+within their respective limits were used to check the positive
+138716
+
+FIGURE 7. Actuation-torque differences of the robot-specific UR10e
+models w.r.t. the model using the averaged parameter set.
+
+definiteness of the mass matrix M(q, p) using Cholesky
+factorization. Positive definiteness was confirmed. In the
+following, the explicit form (20) is computed from the
+identified parameters of the UR10e-4 model reported in
+Tables 4 and 5.
+To show the importance of model-based control schemes,
+three different control laws are compared.
+Model-based Feed-Forward: The standard approach
+is to use the inverse dynamics solution as a non-linear
+feed-forward control command. This can be computed as
+uFF = B−1 YB (qD , q̇D , q̈D )pB from the base-parameter
+model derived from (2) or from the EOM (1), as both yield
+numerically equivalent inverse dynamics solutions. A PD
+feedback controller uPD = KP e + KD ė is used to regulate the
+control error e = qD − q, where qD represents the desired
+trajectory and q denotes the joint angles of the dynamics
+model. The overall control command is uFF+PD = uFF +
+uPD .
+Computed Torque Control (CTC): CTC is a model-based
+feedback linearization approach that compensates the
+nonlinear robot dynamics through the control input. The
+resulting control law, derived from the EOM (1), is uCT =
+B−1 (M(q)v + C(q, q̇)q̇ + g(q) + f(q, q̇)), with v = q̈D +
+KD ė + KP e. Under perfect model matching, the closed-loop
+error dynamics reduce to ë + KD ė + KP e = 0.
+Augmented PD Control (APD): The APD controller takes
+the form uAPD = B−1 (M(q)q̈D +C(q, q̇)q̇D +g(q)+f(q, q̇)+
+KD ė+KP e), which is known to achieve asymptotically stable
+VOLUME 14, 2026
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+tracking. APD additionally requires the explicit Coriolis
+matrix C. Its elements are derived from the mass matrix using
+the Christoffel symbols of the first kind,
+
+
+n
+X
+∂mjk
+1 ∂mij
+∂mik
+cijk =
++
+−
+, Cij =
+cijk q̇k , (21)
+2 ∂qk
+∂qj
+∂qi
+k=1
+
+where mij denotes the (i, j)th element of M. The corresponding error dynamics retain the robot dynamics and are given by
+M(q)ë + C(q, q̇)ė + KD ė + KP e = 0. The skew-symmetry
+property Ṁ − 2C is required for further analysis.
+The stability properties of CTC and APD require a
+symmetric positive-definite mass matrix M, as well as
+positive-definite gain matrices KP and KD . For CTC,
+comparison of the closed-loop error dynamics with the
+standard second-order characteristic polynomial s2 +2ξ ω0 s+
+ω02 yields KP = ω02 I and KD = 2ξ ω0 I. The damping
+ratio ξ = 1 was selected to obtain critical damping and
+avoid overshoot, and the natural frequency was set to ω0 =
+10 rad/s. The same numerical controller gains are used for
+APD, and the model-based feed-forward control uFF+PD to
+ensure a consistent comparison.
+Figure 8 shows the tracking error obtained for the trajectory
+shown in Fig. 9. When using the PD control with feedforward compensation, uFF+PD , the error is significantly
+larger than the errors for the other two control laws. The
+overshoot is pronounced for the first two joints, which are
+subjected to high dynamic loads. The tracking errors of the
+CTC and APD controllers essentially overlap. If no modelbased feed-forward is used, the resulting tracking error is
+up to 10 times larger (which is not shown in the figure)
+than the base-parameter tracking error. In summary, the
+forward-dynamics equations were solved using the physically
+consistent parameters in the EOM (1), which would not
+be possible with the base-parameters. The set of physically consistent dynamics parameters ensures the intrinsic
+properties of the mass matrix, particularly its symmetry
+and positive definiteness, which are required for reliable
+forward dynamics simulation and for guaranteeing the
+stability properties of the investigated model-based control
+schemes. The presented simulation results demonstrate the
+improved tracking performance achieved by the investigated
+model-based control schemes.
+
+FIGURE 8. Comparison of the tracking error e for different control laws.
+
+D. MODEL SIMPLIFICATIONS
+
+Because all inertia and friction parameters are available, it is
+possible to separate and compare torques τ acc := M(q)q̈
+due to acceleration, τ cor := C(q, q̇)q̇ due to Coriolis and
+centrifugal effects, τ grav := g(q) due to gravitation, and
+friction torques τ fric := f in (1). Figure 10 shows the
+contributions of these terms for the UR5e-1 when executing
+the verification trajectory, which corresponds to a highly
+dynamic motion. It can be observed that the friction torques
+τ fric have a significant influence, especially for the last two
+joints, where friction dominates. The acceleration torques
+τ acc are more dominant than the Coriolis and centrifugal term
+VOLUME 14, 2026
+
+FIGURE 9. Trajectory used for the control performance comparison.
+
+τ cor . The gravitation torques τ grav mainly influence joints
+two and three, since these two joints are required to lift the
+robot’s EE.
+It is often suggested that Coriolis and centrifugal effects
+be neglected to reduce the computational effort. Whether
+138717
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+FIGURE 10. Torques due to acceleration τ acc , Coriolis and centrifugal
+effects τ cor , gravitation τ grav , and friction τ fric for the verification
+trajectory of the UR5e-1.
+
+some of the separated terms can be neglected depends on
+the particular trajectory, specifically on the dynamics of the
+type of motion to be executed. It was discussed in [49]
+that these effects become significant only at higher speeds.
+However, [50] noticed that omitting Coriolis and centrifugal
+effects may lead to unacceptably large errors and even to a
+change in the sign of the torque for fast motions. UR robots
+are designed for handling tasks at relatively low speeds.
+Figure 11 shows the actuation torques τ for a simulated
+pick and place trajectory, when torques due to Coriolis and
+centrifugal effects are included and neglected, respectively.
+The corresponding joint angles q are shown in Fig. 12
+and were extracted from the available UR Sim simulation
+software. The trajectory used trapezoidal joint-velocity
+profiles based on the joint-speed and acceleration limits
+provided in the UR robot’s configuration files. Most of the
+time, the two torques are close; the differences become
+noticeable only in regions with higher velocities. A similar
+result for another 6-DOF robot was reported in [51]. For the
+evaluated slow pick-and-place trajectory, the results shown
+in Fig. 11 indicate that the simplified model, which omits the
+Coriolis and centrifugal terms, can be used to compute the
+nonlinear feed-forward torque. Omitting these terms reduces
+the computational effort required for the feed-forward path,
+while the feedback controller compensates for the remaining
+model error and stabilizes the trajectory. However, whether
+this simplification is appropriate remains motion-dependent
+and should be evaluated separately for faster or more dynamic
+trajectories.
+138718
+
+FIGURE 11. Comparison of actuation torques τ with and without torques
+τ cor due to Coriolis and centrifugal effects for a simulated pick and place
+trajectory using the averaged dynamics parameters of the UR5e-mean.
+
+FIGURE 12. Joint angles q for a simulated pick and place trajectory using
+the UR Sim software.
+
+The motivation for neglecting Coriolis and centrifugal
+effects is to reduce the computational effort in time-critical
+applications. It was stated in [51] that these expressions
+require the most computational effort. To quantify the
+computational effort, the EOM (1) are evaluated 106 times
+with and without the Coriolis and centrifugal term C(q, q̇)q̇,
+using random values for q, q̇, q̈. The model was implemented
+in MATLAB and executed on an Intel i7-8700 CPU
+(3.2 GHz). The average computation time for the EOM
+including C(q, q̇)q̇ was 8.9 µs per sample, whereas evaluation
+omitting this term took 3.3 µs per sample. Thus, more than
+50% of the computation time necessary to evaluate the
+dynamics model (1) is spent evaluating the Coriolis and
+centrifugal term. For completeness, the computation times for
+evaluating the base-parameter inverse dynamics model were
+investigated. The complete model took 3.7 µs per evaluation,
+and the model without Coriolis and centrifugal effects took
+1.9 µs per evaluation. These averaged evaluation durations
+further allow a direct comparison of the computational effort
+VOLUME 14, 2026
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+needed for the EOM parameterized by the base-parameters
+(3.7 µs) and the full set of dynamics parameters (8.9 µs).
+Evaluation of the EOM in terms of the base-parameters
+instead of the complete set of dynamics parameters reduces
+the computational effort to roughly 40 %.
+VII. CONCLUSION
+
+This paper presents complete, physically consistent inertial
+parameter sets for the UR5e and UR10e robots. These
+parameter sets address an important practical limitation,
+as the inertial properties cannot be reliably obtained from
+the publicly available manufacturer CAD models, which lack
+material density and volumetric information. The parameters
+were identified using a physically consistent inertial parameterization together with structural assumptions that exploit
+the mechanical design of the robots while preserving physical
+feasibility. Unlike base-parameter sets, which are primarily
+intended for inverse dynamics, the proposed parameters
+provide complete body-specific inertial properties that are
+directly compatible with URDF-based rigid-body models.
+The resulting generalized mass matrices are guaranteed to
+be symmetric and positive definite, making the identified
+parameters suitable for forward dynamics simulation, modelbased control, trajectory optimization, state estimation, and
+other robotics algorithms that explicitly require a physically
+valid mass matrix. Simulation results in forward dynamics
+and model-based control demonstrate that the proposed
+parameter sets are not only accurate for inverse dynamics
+torque prediction but also enable reliable dynamic simulation
+and control. The reported reference parameters therefore
+provide a practical resource for the robotics community,
+facilitating reproducible research and the development of
+high-fidelity dynamic models of the UR5e and UR10e
+platforms.
+The identified inertial parameters show a high degree of
+consistency across different robots of the same type, whereas
+the friction parameters show noticeably larger variations.
+This indicates that the inertial properties, determined by
+the common mechanical design, are well represented while
+friction is influenced by robot-specific drivetrain characteristics, which changes over time and with temperature.
+Consequently, the averaged inertial parameter sets provide
+robust nominal reference models for the UR5e and UR10e.
+For the evaluated UR10e trajectory, the joint torques predicted using the averaged and robot-specific parameter sets
+differ by less than approximately 5 % of the maximum joint
+torques. Nevertheless, robot-specific friction identification
+remains advantageous for applications requiring the highest
+prediction accuracy, such as high-performance feed-forward
+control.
+It was further shown that for a typical pick-and-place
+motion, the Coriolis and centrifugal torque contributions are
+sufficiently small to be neglected without a significant loss of
+accuracy. This observation is specific to motions with comparable velocity profiles. This simplification substantially
+reduces the computational cost of evaluating the equations
+VOLUME 14, 2026
+
+of motion, decreasing the mean evaluation time from 8.9 µs
+to 3.3 µs per sample.
+The principal contribution of this work is the provision of
+complete, physically consistent reference inertial parameter
+sets for the UR5e and UR10e that are directly applicable
+to rigid-body dynamics algorithms requiring body-specific
+inertial properties. In contrast to base-parameters, the proposed models are suitable not only for inverse dynamics but
+also for forward dynamics simulation, model-based control,
+trajectory optimization, and URDF-based robot modeling.
+Beyond the reported datasets, the presented identification
+methodology provides a general framework for obtaining
+physically consistent inertial parameters of serial manipulators whenever appropriate structural assumptions can be
+formulated. The physically consistent identification approach
+employed in this paper has also been successfully applied to a
+parallel robot in [52], demonstrating its applicability beyond
+serial manipulators.
+REFERENCES
+[1] W. Khalil and E. Dombre, Modeling, Identification and Control of Robots.
+Oxford, U.K.: Butterworth-Heinemann, 2004.
+[2] H. Khalil, Nonlinear Systems. Upper Saddle River, NJ, USA: PrenticeHall, 2002.
+[3] R. Ortega and E. García-Canseco, ‘‘Interconnection and damping assignment passivity-based control: A survey,’’ Eur. J. Control, vol. 10, no. 5,
+pp. 432–450, Jan. 2004.
+[4] R. Kelly and R. Carelli, ‘‘A class of nonlinear PD-type controllers for robot
+manipulators,’’ J. Robotic Syst., vol. 13, no. 12, pp. 793–802, Dec. 1996.
+[5] R. M. Murray, Z. Li, and S. S. Sastry, A Mathematical Introduction to
+Robotic Manipulation. Boca Raton, FL, USA: CRC Press, 2017.
+[6] J. Carpentier, R. Budhiraja, and N. Mansard, ‘‘Proximal and Sparse
+Resolution of Constrained Dynamic Equations,’’ in Proc. Robot., Sci. Syst.
+XVII, D. A. Shell, M. Toussaint, and M. A. Hsieh, Eds., Jul. 2021. [Online].
+Available: https://hal.inria.fr/hal-03271811
+[7] N. Koenig and A. Howard, ‘‘Design and use paradigms for Gazebo, an
+open-source multi-robot simulator,’’ in Proc. IEEE/RSJ Int. Conf. Intell.
+Robots Syst. (IROS), vol. 3, Sendai, Japan, Sep./Oct. 2004, pp. 2149–2154.
+[8] M. Quigley, ‘‘ROS: An open-source robot operating system,’’ in Proc.
+ICRA Workshop Open Source Softw., 2009, p. 5.
+[9] S. Haddadin, A. Albu-Schaffer, and G. Hirzinger, ‘‘The role of the robot
+mass and velocity in physical human-robot interaction—Part I: Nonconstrained blunt impacts,’’ in Proc. IEEE Int. Conf. Robot. Autom.,
+May 2008, pp. 1331–1338.
+[10] S. Haddadin, K. Krieger, N. Mansfeld, and A. Albu-Schäffer, ‘‘On
+impact decoupling properties of elastic robots and time optimal velocity
+maximization on joint level,’’ in Proc. IEEE/RSJ Int. Conf. Intell. Robots
+Syst., Oct. 2012, pp. 5089–5096.
+[11] N. Mansfeld, B. Djellab, J. R. Veuthey, F. Beck, C. Ott, and S. Haddadin,
+‘‘Improving the performance of biomechanically safe velocity control for
+redundant robots through reflected mass minimization,’’ in Proc. IEEE/RSJ
+Int. Conf. Intell. Robots Syst. (IROS), Sep. 2017, pp. 5390–5397.
+[12] K. Yoshida, K. Osuka, H. Mayeda, and T. Ono, ‘‘When is the set of baseparameter values physically impossible?’’ J. Robot. Soc. Jpn., vol. 14,
+no. 1, pp. 122–130, 1996.
+[13] K. Yoshida and W. Khalil, ‘‘Verification of the positive definiteness of
+the inertial matrix of manipulators using base inertial parameters,’’ Int. J.
+Robot. Res., vol. 19, no. 5, pp. 498–510, May 2000.
+[14] C. D. Sousa and R. Cortesão, ‘‘Physically feasible dynamic parameter
+identification of the 7-DOF WAM robot,’’ in Proc. IEEE/RSJ Int. Conf.
+Intell. Robots Syst., Nov. 2013, pp. 2868–2873.
+[15] Y. Huang, J. Ke, X. Zhang, and J. Ota, ‘‘Dynamic parameter identification
+of serial robots using a hybrid approach,’’ IEEE Trans. Robot., vol. 39,
+no. 2, pp. 1607–1621, Apr. 2023.
+[16] T. Lee, J. Kwon, P. M. Wensing, and F. C. Park, ‘‘Robot model
+identification and learning: A modern perspective,’’ Annu. Rev. Control,
+Robot., Auto. Syst., vol. 7, no. 1, pp. 311–334, Jul. 2024.
+138719
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+[17] C. D. Sousa and R. Cortesão, ‘‘Physical feasibility of robot base inertial
+parameter identification: A linear matrix inequality approach,’’ Int. J.
+Robot. Res., vol. 33, no. 6, pp. 931–944, May 2014.
+[18] S. Traversaro, S. Brossette, A. Escande, and F. Nori, ‘‘Identification of fully
+physical consistent inertial parameters using optimization on manifolds,’’
+in Proc. IEEE/RSJ Int. Conf. Intell. Robots Syst. (IROS), Oct. 2016,
+pp. 5446–5451.
+[19] P. M. Wensing, S. Kim, and J. E. Slotine, ‘‘Linear matrix inequalities
+for physically consistent inertial parameter identification: A statistical
+perspective on the mass distribution,’’ IEEE Robot. Autom. Lett., vol. 3,
+no. 1, pp. 60–67, Jan. 2018.
+[20] C. D. Sousa and R. Cortesão, ‘‘Inertia tensor properties in robot dynamics
+identification: A linear matrix inequality approach,’’ IEEE/ASME Trans.
+Mechatronics, vol. 24, no. 1, pp. 406–411, Feb. 2019.
+[21] C. Gaz, M. Cognetti, A. Oliva, P. Robuffo Giordano, and A. De Luca,
+‘‘Dynamic identification of the franka emika panda robot with retrieval
+of feasible parameters using penalty-based optimization,’’ IEEE Robot.
+Autom. Lett., vol. 4, no. 4, pp. 4147–4154, Oct. 2019.
+[22] Y. Yuan and W. Sun, ‘‘An integrated kinematic calibration and dynamic
+identification method with only static measurements for serial robot,’’
+IEEE/ASME Trans. Mechatronics, vol. 28, no. 5, pp. 2762–2773,
+Oct. 2023.
+[23] C. Rucker and P. M. Wensing, ‘‘Smooth parameterization of rigid-body
+inertia,’’ IEEE Robot. Autom. Lett., vol. 7, no. 2, pp. 2771–2778, Apr. 2022.
+[24] T. Xu, J. Fan, Y. Chen, X. Ng, M. H. Ang, Q. Fang, Y. Zhu, and J. Zhao,
+‘‘Dynamic identification of the KUKA LBR iiwa robot with retrieval
+of physical parameters using global optimization,’’ IEEE Access, vol. 8,
+pp. 108018–108031, 2020.
+[25] G. Golluccio, G. Gillini, A. Marino, and G. Antonelli, ‘‘Robot dynamics
+identification: A reproducible comparison with experiments on the kinova
+jaco,’’ IEEE Robot. Autom. Mag., vol. 28, no. 3, pp. 128–140, Sep. 2021.
+[26] N. Kovincic, A. Müller, H. Gattringer, M. Weyrer, A. Schlotzhauer, and
+M. Brandstötter, ‘‘Dynamic parameter identification of the universal robots
+ur5,’’ in Proc. ARW OAGM Workshop, 2019, pp. 44–53.
+[27] A. Raviola, A. D. Martin, R. Guida, S. Pastorelli, S. Mauro, and M. Sorli,
+‘‘Identification of a UR5 collaborative robot dynamic parameters,’’ in Proc.
+Int. Conf. Robot. Alpe-Adria Danube Region, 2021, pp. 69–77.
+[28] C. Gaz, E. Magrini, and A. De Luca, ‘‘A model-based residual approach
+for human-robot collaboration during manual polishing operations,’’
+Mechatronics, vol. 55, pp. 234–247, Nov. 2018.
+[29] M. Indri and S. Trapani, ‘‘Framework for static and dynamic friction identification for industrial manipulators,’’ IEEE/ASME Trans. Mechatronics,
+vol. 25, no. 3, pp. 1589–1599, Jun. 2020.
+[30] S. M. Kay, Fundamentals Statistical Signal Processing, I: Estimation
+Theory, vol. 1. London, U.K.: Pearson, 1993.
+[31] M. Gautier and P. Poignet, ‘‘Extended Kalman filtering and weighted
+least squares dynamic identification of robot,’’ Control Eng. Pract., vol. 9,
+no. 12, pp. 1361–1372, 2001.
+[32] M. Neubauer, H. Gattringer, and H. Bremer, ‘‘A persistent method for
+parameter identification of a seven-axes manipulator,’’ Robotica, vol. 33,
+no. 5, pp. 1099–1112, Jun. 2015.
+[33] J. J. Uicker, B. Ravani, and P. N. Sheth, Matrix Methods in the
+Design Analysis of Mechanisms and Multibody Systems. Cambridge, U.K.:
+Cambridge Univ. Press, 2013.
+[34] J. G. Papastavridis, Analytical Mechanics. Singapore: World Scientific,
+2014.
+[35] M. Gautier and W. Khalil, ‘‘Exciting trajectories for the identification
+of base inertial parameters of robots,’’ in Proc. 30th IEEE Conf. Decis.
+Control, Brighton, U.K., Dec. 1991, pp. 494–499.
+[36] J. Swevers, C. Ganseman, D. B. Tukel, J. de Schutter, and H. Van Brussel,
+‘‘Optimal robot excitation and identification,’’ IEEE Trans. Robot. Autom.,
+vol. 13, no. 5, pp. 730–740, 1997.
+[37] J. Swevers, W. Verdonck, and J. D. Schutter, ‘‘Dynamic model identification for industrial robots,’’ IEEE Control Syst. Mag., vol. 27, no. 5,
+pp. 58–71, 2007.
+[38] T. Lee, B. D. Lee, and F. C. Park, ‘‘Optimal excitation trajectories for
+mechanical systems identification,’’ Automatica, vol. 131, Sep. 2021,
+Art. no. 109773.
+[39] Q. Leboutet, J. Roux, A. Janot, J. R. Guadarrama-Olvera, and G. Cheng,
+‘‘Inertial parameter identification in robotics: A survey,’’ Appl. Sci., vol. 11,
+no. 9, p. 4303, May 2021.
+[40] Bullet Physics Library. [Online]. Available: https://github.com/
+bulletphysics/bullet3
+138720
+
+[41] J. Lofberg, ‘‘YALMIP: A toolbox for modeling and optimization in
+MATLAB,’’ in Proc. IEEE Int. Conf. Robot. Autom., New Orleans, LA,
+USA, Apr./May 2004, pp. 284–289.
+[42] Real Time Data Exchange Library. [Online]. Available:
+https://sdurobotics.gitlab.io/ur_rtde/
+[43] A. Raviola, R. Guida, A. De Martin, S. Pastorelli, S. Mauro, and M. Sorli,
+‘‘Effects of temperature and mounting configuration on the dynamic
+parameters identification of industrial robots,’’ Robotics, vol. 10, no. 3,
+p. 83, Jun. 2021.
+[44] L. Messner, P. Staufer, H. Gattringer, and H. Bremer, ‘‘A time optimal
+trajectory generation method for a flatness based controlled flexible link
+robot,’’ in Proc. 5th Eur. Conf. Struct. Control, Genoa, Italy, Jun. 2012.
+[45] L. Biagiotti and C. Melchiorri, Trajectory Planning for Automatic Mchines
+and Robots. Cham, Switzerland: Springer, 2008.
+[46] R. Pagani, G. Legnani, G. Incerti, and M. Gheza, ‘‘Evaluation and
+modeling of the friction in robotic joints considering thermal effects,’’ J.
+Mech. Robot., vol. 12, no. 2, Apr. 2020, Art. no. 021108.
+[47] L. Hao, R. Pagani, M. Beschi, and G. Legnani, ‘‘Dynamic and friction
+parameters of an industrial robot: Identification, comparison and repetitiveness analysis,’’ Robotics, vol. 10, no. 1, p. 49, Mar. 2021.
+[48] A. C. Bittencourt and S. Gunnarsson, ‘‘Static friction in a robot joint—
+Modeling and identification of load and temperature effects,’’ J. Dyn. Syst.,
+Meas., Control, vol. 134, no. 5, Sep. 2012, Art. no. 051013.
+[49] W. Khalil, ‘‘Modeling and control of manipulators—Part II: Dynamics and
+control,’’ Ph.D. dissertation, Robot. Winter School, Robotica Principia,
+Centre de recherche Inria Sophia Antipolis—Méditérranée, France, 2019.
+[50] J. Y. S. Luh, M. W. Walker, and R. P. C. Paul, ‘‘On-line computational
+scheme for mechanical manipulators,’’ J. Dyn. Syst., Meas., Control,
+vol. 102, no. 2, pp. 69–76, Jun. 1980.
+[51] C. M. Wronka and M. W. Dunnigan, ‘‘Derivation and verification of the
+dynamic model for the PA10-6CE robotic manipulator,’’ Int. J. Model.,
+Identificat. Control, vol. 16, no. 1, pp. 24–40, 2012.
+[52] D. Gnad, H. Gattringer, A. Müller, W. Höbarth, R. Riepl, and L. Messner,
+‘‘Dedicated dynamic parameter identification for delta-like robots,’’ IEEE
+Robot. Autom. Lett., vol. 9, no. 5, pp. 4393–4400, May 2024.
+
+DANIEL GNAD (Member, IEEE) received the
+B.Sc., Dipl.-Ing., and Dr. techn. degrees in mechatronics from Johannes Kepler University Linz
+(JKU), in 2018, 2020, and 2024, respectively.
+He joined as a Research Assistant with the
+Institute of Robotics, JKU, from 2020 to 2024. His
+research focused on physically consistent dynamics parameter identification, frequency domain
+identification, and optimal control of mechatronic
+systems.
+
+HUBERT GATTRINGER (Member, IEEE) received
+the Dipl.-Ing. degree in mechatronics and the
+Dr. Tech. (Ph.D.) degree in technical sciences
+from Johannes Kepler University Linz (JKU), in
+2001 and 2006, respectively. In 2011, he became
+an Associate Professor with the Institute of
+Robotics, JKU. His research is focused on
+modeling and control of flexible link/joint robotic
+systems and walking machines, optimal path
+planning, and kinematically redundant industrial
+robots.
+VOLUME 14, 2026
+
+D. Gnad et al.: Complete Set of Physically Consistent Dynamics Parameters
+
+ANDREAS MÜLLER (Senior Member, IEEE)
+received the Diploma degree in mathematics,
+in 1997, the Diploma degree in electrical engineering, in 1998, the Diploma degree in mechanical engineering, in 2000, the Ph.D. degree in
+mechanics, in 2004, and the Habilitation degree
+in mechanics, in 2011. He is currently a Professor in robotics with Johannes Kepler University
+Linz, Linz, Austria. His current research interests
+include holistic modeling, model-based and optimal control of mechatronic systems, redundant robotic systems, parallel
+robots, biomechanics, and computational dynamics.
+
+MARCEL LAHOUD (Member, IEEE) received
+the degree in mechanical engineering from the
+Universidad Central de Venezuela, in 2016, the
+master’s degree in robotics from École Centrale
+de Nantes, and the Ph.D. degree in robotics and
+bioengineering from the Universitá di Genova,
+in 2025. He is currently a Postdoctoral Researcher
+with IIT. His research focuses on physics-informed
+neural networks for robot dynamic identification
+and advanced control, reinforcement learning, and
+augmented reality for human-robot collaboration.
+
+FERDINANDO CANNELLA (Member, IEEE)
+received the first Ph.D. degree in mechanical
+measurement applied to engineering from the
+University of Padua, Padua, Italy, in 2002, and the
+second Ph.D. degree in mechanical engineering
+from King’s College of London (KCL), London,
+U.K., in 2006. He joined Italian Institute of
+Technology, in 2008. From 2010 to 2021, he was
+with the Advanced Robotics Department, led by
+Prof. D. Caldwell. In 2021, he was the Head
+of the Industrial Robotics Facility. His research interests include the
+flexible multibody simulations applied to the development of manipulators,
+packaging, and biomedical devices.
+
+VOLUME 14, 2026
+
+ROBERTO DI LEVA received the B.Sc. and M.Sc.
+degrees (Hons.) in mechanical engineering from
+the University of Bologna, and the Ph.D. degree in
+robotics. He is currently a Postdoctoral Researcher
+with the Department of Industrial Engineering,
+where he researches in the collaborative robotics
+field, with a particular focus on trajectory planning
+and control of single and dual-arm robots for
+optimal handling of liquids and objects. He was
+a recipient of the graduation award in memory of
+Prof. Ettore Funaioli, in 2019.
+
+MARCO CARRICATO (Senior Member, IEEE)
+received the M.Sc. degree (Hons.) in mechanical
+engineering, in 1998, and the Ph.D. degree in
+mechanics of machines, in 2002. He has been with
+the University of Bologna, since 2004, where he
+is currently a Full Professor. His research interests
+include robotic systems, servo-actuated automatic
+machinery, and the theory of mechanisms. He was
+a recipient of the AIMETA Junior Prize from
+Italian Association of Theoretical and Applied
+Mechanics, in 2011, for outstanding results in the field of mechanics of
+machines.
+
+JOHANNES WENNINGER, photograph and biography not available at the
+time of publication.
+
+138721
+
+
