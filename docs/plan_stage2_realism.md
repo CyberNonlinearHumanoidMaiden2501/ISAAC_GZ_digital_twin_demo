@@ -143,7 +143,7 @@ effects, ranked by plant relevance (V_dc = 48 V, f_sw = 10 kHz default — confi
 |---|---|---|---|
 | Computational + ZOH delay | voltage applied in period k+1 is computed from samples in period k | 1–1.5·T_sw ≈ 100–150 µs | **Yes** — this is the servo bandwidth the research could not find published; it caps the current-loop crossover at ~f_sw/10–20 ≈ 0.5–1 kHz. Modeled as a transport delay |
 | Voltage ceiling | SVPWM linear region caps phase voltage at V_dc/√3 | hard limit ≈ 27.7 V peak | **Yes** — decides whether flux weakening is needed (open check below) |
-| Current ripple | switched voltage minus its average integrates on L | Δi_pp ≈ V_dc/(8·L·f_sw) ≈ 0.5–1 A on ~5 A rated | Signal only — averages to zero torque (rotor inertia filters f_sw). Added analytically to the measured current, never integrated |
+| Current ripple | switched voltage minus its average integrates on L | Δi_pp ≈ V_dc/(8·L·f_sw) ≈ 2–4 A on ~10 A_rms rated (verified L) | Signal only — averages to zero torque (rotor inertia filters f_sw). Added analytically to the measured current, never integrated |
 | Dead-time | ~0.5–2 µs per period with both switches off (shoot-through guard) | constant voltage error ≈ V_dc·(t_dt/T_sw) ≈ 0.5 V, sign-opposed to current | Minor — 6th-harmonic distortion + zero-crossing clamp at low speed. Constant offset term `V_dt·sign(i)`; skipped in v1 |
 | Device drops | IGBT/MOSFET on-drop + diode drop | 1–2 V offset | Folded into the dead-time term |
 | Overmodulation / six-step | operating past the ceiling | buys ~10 % voltage, adds 5th/7th harmonics | Deferred |
@@ -161,26 +161,35 @@ offset. Nothing exotic to model.
   friction (standard flexible-joint control partition).
 - The plugin sub-steps the electrical ODE at 10 kHz internally and exchanges
   torque with DART at the world's 1 kHz; DART only ever sees joint-side torque.
-- **Flux-weakening check (done 2026-11-18 with [E] seeds):** at max joint
-  speed 180 °/s the motor spins ≈ 101·3.14 ≈ 317 rad/s; back-EMF reaches the
-  V_dc/√3 ≈ 27.7 V ceiling at 346 rad/s — a 1.09× margin, so no flux
-  weakening needed with the seed Kt. Re-verify with the datasheet Ke; if the
-  margin drops below 1×, add i_d < 0 — the reason d-q was chosen.
+- **Flux-weakening check (datasheet-verified 2026-11-23):** at max joint speed
+  180 °/s the motor spins ≈ 101·3.14 ≈ 317 rad/s. With the verified Kollmorgen
+  TBM2G numbers, the 06826 A/C windings' back-EMF (74 / 37 V) exceeds the
+  V_dc/√3 ≈ 27.7 V ceiling — only winding D fits (21.4 V, 1.30× margin). The
+  05008 A fits at 1.08× (no load headroom); C is the default (2.15×).
+  Defaults: J1-3 → 06826-D, wrist → 05008-C — no field weakening needed with
+  these; if the Robotica paper's winding turns out to be A/C, i_d < 0 becomes
+  part of the FOC (the reason d-q was chosen).
 
 **Build order** (each layer config-togglable in `params.m`; the
 `actuator_model: l1` / `l0` fallbacks remain available throughout):
 
-- **1.1 Electrical stage (start here):** `params.m` (per-joint [E] seeds pinned
-  to the research τ_e), `pmsm.m` (d-q ODE), `foc_loop.m` (PI current loops +
-  decoupling + one-sample compute delay + V_dc/√3 ceiling),
+- **1.1 Electrical stage (start here):** `params.m` (per-joint [OEM] Kollmorgen
+  TBM2G values + a plant-truth vs controller-belief split with
+  tolerance-bounded identification errors), `pmsm.m` (d-q ODE, truth only),
+  `foc_loop.m` (PI current loops + decoupling + back-EMF feedforward computed
+  from the *belief*, one-sample compute delay, V_dc/√3 ceiling),
   `test_electrical.m` — validates τ_e = L/R against the research values
   (0.9 ms wrist / 1.3 ms J1–3), τ_em = Kt·i_q, back-EMF at speed (coupled
   i_d–i_q steady state), the current-loop crossover *emerging* from the PI +
-  delay (design point f_sw/20 = 500 Hz → 2.5 % overshoot, 0.7 ms settle;
-  800 Hz → ~29 % overshoot — the hot option), and the flux-weakening check.
+  delay (design point f_sw/20 = 500 Hz; ID errors degrade the 2.5 % overshoot
+  to 5.3 %), and the flux-weakening check.
   **Result (2026-11-18): PASSED** — τ_e measured 1.30/0.91 ms, i_ss = V/R,
   τ_em = Kt·i_q, coupled back-EMF steady state matched analytically, voltage
   ceiling simulated = analytic (346 rad/s).
+  **Result (2026-11-23): parameters re-sourced and verified** against the
+  Kollmorgen datasheets (τ_e cross-checked 1.34 / 0.93 ms; all windings
+  consistent); winding defaults 06826-D / 05008-C; the FOC now runs on
+  identification estimates, never on true plant values.
 - **1.2 Mechanical stage:** `two_mass.m` (rotor EOM + stiffening flexspline),
   `test_mechanical.m` — steady windup φ = τ/k, the ~16/25 Hz
   anti-resonance/resonance pair (control-package FRF), motor-vs-joint encoder

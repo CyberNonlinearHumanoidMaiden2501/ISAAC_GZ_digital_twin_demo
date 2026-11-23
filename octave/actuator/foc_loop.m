@@ -2,6 +2,9 @@
 % Runs once per switching period (10 kHz). The commanded voltage is held over
 % the period (ZOH, implicit in the fixed-step integration) and applied one
 % sample late (computation delay), giving ~1.5*Tsw total loop lag.
+% Gains (kp/ki) and the decoupling / back-EMF feedforward use the
+% CONTROLLER'S BELIEF (Rhat/Lhat/lambdahat from identification) — never the
+% true plant values, exactly like a real drive.
 %
 % Controller state s = [int_d; int_q; vd_prev; vq_prev].
 % Returns [vd, vq, s] for the voltage to apply during the NEXT period.
@@ -11,8 +14,9 @@ function [vd, vq, s] = foc_loop(id, iq, wm, id_star, iq_star, M, s)
   e_q = iq_star - iq;
   s(1) += M.ki*e_d*M.dt;   % q/d integrators
   s(2) += M.ki*e_q*M.dt;
-  vd_raw = M.kp*e_d + s(1) - we*M.L*iq;               % decoupling
-  vq_raw = M.kp*e_q + s(2) + we*(M.L*id + M.lambda);  % decoupling + back-EMF FF
+  vd_raw = M.kp*e_d + s(1) - we*M.Lhat*iq;              % decoupling (belief)
+  vq_raw = M.kp*e_q + s(2) + we*(M.Lhat*id + M.lambdahat); % decoupling +
+                                                          % back-EMF FF (belief)
   % circular voltage clamp (SVPWM ceiling) with conditional-integration
   % anti-windup
   vmag = sqrt(vd_raw^2 + vq_raw^2);
