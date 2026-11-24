@@ -73,6 +73,8 @@ fprintf('    achieved crossover ~ %.0f Hz (Lhat/L mismatch: wc*Lhat/L)\n', ...
         M.wc*M.Lhat/M.L/(2*pi));
 fprintf('    rise 10-90%% = %.2f ms, overshoot = %.1f %%, peak = %.2f A, settle (2%%) = %.2f ms\n', ...
         (i90-i10)*dt*1e3, (peak-5)/5*100, peak, tset);
+fprintf('    steady-state error = %.1e A (integral action -> 0 despite ID errors)\n', ...
+        iq_cl(end) - 5);
 
 % ------------------------------------------------------------------
 % 3) back-EMF at speed, open loop, v = 0
@@ -148,6 +150,10 @@ peak_p = max(iq_perf);
 fprintf('\n[5] perfect ID vs errors:\n');
 fprintf('    perfect ID: overshoot = %.1f %% (errors case: %.1f %%)\n', ...
         (peak_p-5)/5*100, (peak-5)/5*100);
+fprintf('    torque-path gain error (Kt/Kthat - 1) = %+.1f %% — the Kt-ID error\n', ...
+        (M.Kt/M.Kthat - 1)*100);
+fprintf('    shows up HERE (every effort command is scaled by Kt/Kthat),\n');
+fprintf('    not in the current loop (its SSE is 0 via integral action)\n');
 dv = wm0*M.p*(M.lambdahat - M.lambda);    % feedforward error at speed
 fprintf('    lambda-ID error %+.0f%% consumes %.1f V of the %.1f V budget at wm = %.0f rad/s\n', ...
         M.id_err.Kt*100, dv, M.vmax, wm0);
