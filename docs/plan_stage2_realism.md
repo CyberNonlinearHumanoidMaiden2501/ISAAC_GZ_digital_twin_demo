@@ -30,8 +30,9 @@
   neutralized while the plugin is active.
 - **FTS noise: vendor-conservative worst case** as default; literature model
   stays a config option.
-- **Friction split: literature ranges + in-sim calibration** until the Gnad 2026
-  per-joint table is obtained.
+- **Friction: the Gnad 2026 per-joint table** (obtained 2026-11-24,
+  `docs/sources/literature/friction_table.xlsx`, UR5e mean of two robots);
+  asymmetric Coulomb is a later refinement.
 - Faults carry a `severity` field; the protective-stop / safety state machine
   stays deferred.
 
@@ -41,7 +42,8 @@
    (`docs/sources/literature/`).
 2. Source R / L / k_t / k_e for the candidate Kollmorgen TBM2G motors
    (datasheets).
-3. (If obtained) the Gnad 2026 per-joint friction table.
+3. ~~The Gnad 2026 per-joint friction table~~ — obtained 2026-11-24:
+   `docs/sources/literature/friction_table.xlsx` (UR5e mean of two robots).
 
 ## Acceptance criteria (from the parent plan)
 

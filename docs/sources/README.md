@@ -44,11 +44,11 @@ base URL <https://www.universal-robots.com/manuals/EN/HTML/SW5_26/Content/prod-e
 |---|---|---|
 | `Madsen_PhD_Thesis_Aarhus.pdf` | Madsen PhD thesis (Aarhus Univ.) — e-series joint architecture (dual encoders, current/temp sensors), strain-wave stiffness/backlash | <https://pure.au.dk/ws/files/197603831/Phd_Thesis_Emil_Madsen.pdf> |
 | `PoliTo_UR5_Joint_Encoders_Thesis.pdf` | Politecnico di Torino thesis — UR5 joint teardown, motor encoder (1080 CPR), gearbox | <https://webthesis.biblio.polito.it/16939/1/tesi.pdf> |
+| `A_Complete_Set_of_Physically_Consistent_Dynamics_Parameters_for_the_Universal_Robots_UR5e_and_UR10e.pdf` | Gnad et al., IEEE Access 2026 — UR5e/UR10e rigid-body + drive dynamics parameters; per-joint friction table | IEEE Access vol. 14, DOI <https://doi.org/10.1109/ACCESS.2026.3726682> |
+| `friction_table.xlsx` | UR5e per-joint viscous/Coulomb friction table (mean of two robots, w.r.t. gearbox output), hand-extracted from the Gnad paper | extraction of the paper's Table 3 (2026-11-24) |
 
 ## Not preserved (failed or non-document downloads)
 
-- Gnad et al. IEEE Access 2026 full text (paywalled — only abstract captured; DOI
-  <https://doi.org/10.1109/ACCESS.2026.3726682>)
 - UoP FTS-modeling thesis (server 503; repository URL in the research doc)
 - Robotica 2024 "Electromechanical modeling of the UR5 e-Series" (paywalled)
 - Guida et al., *Machines* 2024 (open access, not downloaded — see

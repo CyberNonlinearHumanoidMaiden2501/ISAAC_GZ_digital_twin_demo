@@ -268,7 +268,7 @@ config fallbacks in `plant_config.yaml`):
 | Rotor inertia J_m | 6.4e-5 (J1–3) / 1.2e-5 (J4–6) kg·m² | [L] Robotica 2024 |
 | Motor electrical τ_e = L/R | 0.9 ms wrist / 1.3 ms J1–3 | [L] derived from candidate-motor datasheets |
 | Flexspline stiffness k(φ) | stiffening spring; values to extract from thesis figures | [L] Madsen |
-| Joint friction | Coulomb 7–12 Nm, viscous 9–15 N·m·s/rad (asymmetric Coulomb) | [L] ranges |
+| Joint friction | Gnad 2026 per-joint table: Coulomb 8.58/12.94/9.56/2.24/2.08/2.13 Nm, viscous 13.9/8.9/8.92/1.26/1.59/1.39 N·m·s/rad | [L] |
 | Encoder quantization | ~1e-5 rad | derived estimate |
 | Encoder noise | σ ≈ 0.5–1e-5 rad | estimate [NF] |
 | FTS range / precision / accuracy | ±50 N / ±10 Nm; ±3.5 N / ±0.2 Nm; ±4.0 N / ±0.3 Nm | [V] datasheet |
@@ -298,8 +298,8 @@ config fallbacks in `plant_config.yaml`):
   calibration may be part of the fix → bridges → README documenting every fault and
   its expected signature. Research sub-tasks feeding the plugin: extract k(φ) from
   the Madsen thesis figures (in `docs/sources/literature/`), source R/L/k_t/k_e from
-  the Kollmorgen TBM2G datasheets, and (if obtained by then) the Gnad per-joint
-  friction table. Detailed design: [`plan_stage2_realism.md`](plan_stage2_realism.md).
+  the Kollmorgen TBM2G datasheets, and the Gnad per-joint friction table
+  (obtained 2026-11-24). Detailed design: [`plan_stage2_realism.md`](plan_stage2_realism.md).
 - **Stage 3 (validation):** smoke test modeled on upstream `test_gz.py` (launch
   headless, move, assert topics) + fault-signature checks (jam → velocity zero +
   effort spike; dropout → stale stamps; derate → larger tracking error).
@@ -325,9 +325,9 @@ config fallbacks in `plant_config.yaml`):
 - PID/effort + current-loop tuning is empirical and happens in Stage 2 once the L2
   actuator exists; budget one tuning session; values will be refined against real
   data later.
-- Per-joint friction split is a literature range (7–12 / 9–15), not exact values —
-  start mid-range, tune; adopt the Gnad 2026 per-joint table once it is obtained
-  (accepted as approximate until then — see open questions).
+- Per-joint friction is now the Gnad 2026 table (UR5e mean of two robots — see
+  open questions); the residual uncertainty is robot-to-robot spread and the
+  asymmetric-Coulomb direction split — accepted as approximate for the twin.
 - The L2 electrical parameters (R, L, k_t, k_e, PWM frequency) come from
   *candidate* Kollmorgen motors UR has never publicly confirmed — the electrical
   stage models the right class of servo, not the exact unit; keep them
@@ -343,10 +343,12 @@ config fallbacks in `plant_config.yaml`):
 
 - [x] IMU scope — decided: base 6-axis IMU + tool-flange accelerometer.
 - [x] Stop state machine — deferred to a later phase.
-- [x] Exact per-joint friction/damping split — decided 2026-11-02: adopt the Gnad
-      2026 per-joint table when it can be obtained; until then the literature
-      ranges plus Stage 2 in-sim calibration are accepted. Friction being "a bit
-      off" the real machine is acceptable for the twin pipeline.
+- [x] Exact per-joint friction/damping split — RESOLVED 2026-11-24: the Gnad
+      2026 per-joint table was obtained (`docs/sources/literature/friction_table.xlsx`,
+      UR5e mean of two robots). Viscous: 13.9/8.9/8.92/1.26/1.59/1.39 N·m·s/rad;
+      Coulomb: 8.58/12.94/9.56/2.24/2.08/2.13 Nm. The asymmetric-Coulomb
+      direction split (forward vs backward power flow) remains a later
+      refinement.
 - [x] FTS noise anchor — decided 2026-11-02: **vendor-conservative (worst-case)**
       values stay the default (σ_F = 1.0 N, σ_T = 0.05 Nm); the literature model
       remains a config option. Noise being "a bit off" is acceptable.

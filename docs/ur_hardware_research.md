@@ -45,8 +45,16 @@ Total torque-response lag ≈ electrical τ (~1–3 ms) + 2 ms discrete loop at 
 
 ### 1.3 Joint friction [L]
 
-- UR5e measured joint-side friction: **Coulomb 7–12 Nm, viscous 9–15 N·m·s/rad** (ranges across the 6 joints) — [Gnad, Gattringer, Müller et al., IEEE Access 14:138706, 2026](https://doi.org/10.1109/ACCESS.2026.3726682). Exact per-joint table is paywalled (verify before using precise values).
-- Model form: **asymmetric** Coulomb (direction-dependent — different when power flows forward vs backward through the strain-wave gear) + viscous; smoothing ε=1e-3 — Robotica 2024 (["Electromechanical modeling and identification of the UR5 e-Series robot"](https://www.cambridge.org/core/journals/robotica/article/electromechanical-modeling-and-identification-of-the-ur5-eseries-robot/1AE5BAE866D904F6C79B4C159BEA2B45F)).
+- UR5e identified joint-side friction — [Gnad, Gattringer, Müller et al., IEEE Access 14:138706, 2026](https://doi.org/10.1109/ACCESS.2026.3726682). Full text obtained 2026-11-24; the per-joint table is extracted in `sources/literature/friction_table.xlsx`. Mean of two robots, w.r.t. the gearbox output:
+
+  | Joint | 1 (pan) | 2 (lift) | 3 (elbow) | 4 (wrist 1) | 5 (wrist 2) | 6 (wrist 3) |
+  |---|---|---|---|---|---|---|
+  | Viscous pv (N·m·s/rad) | 13.9 | 8.9 | 8.92 | 1.26 | 1.59 | 1.39 |
+  | Coulomb pC (Nm) | 8.58 | 12.94 | 9.56 | 2.24 | 2.08 | 2.13 |
+
+  (Previously only the cross-joint ranges were known: Coulomb 7–12 Nm,
+  viscous 9–15 N·m·s/rad across the first three drives.)
+- Model form: **asymmetric** Coulomb (direction-dependent — different when power flows forward vs backward through the strain-wave gear) + viscous; smoothing ε=1e-3 — Robotica 2024 (["Electromechanical modeling and identification of the UR5 e-Series robot"](https://www.cambridge.org/core/journals/robotica/article/1AE5BAE866D904F6C79B4C159BEA2B45F)). The Gnad table gives symmetric values; the direction split remains a refinement.
 - Temperature dependence: viscous friction drops up to **35%** from "cold" (21–25°C) to "warm" (30–37°C) robot — Kovincic et al. 2019 (UR5 CB3).
 
 ### 1.4 Brakes [V]
@@ -190,7 +198,7 @@ e-series factory presets (extracted from PolyScope `safety.conf`; labeled "sugge
 | Motor electrical τ_e = L/R | ≈0.9 ms (wrist) / 1.3 ms (J1–3) | [L] derived from candidate-motor datasheets |
 | Rotor inertia J_m | 6.4e-5 (J1–3) / 1.2e-5 (J4–6) kg·m² | [L] Robotica 2024 |
 | Flexspline stiffness k(φ) | stiffening spring (values in thesis figures) | [L] Madsen |
-| Joint friction | Coulomb 7–12 Nm + viscous 9–15 N·m·s/rad (ranges; adopt the Gnad 2026 per-joint table when obtained) | [L] |
+| Joint friction | Gnad 2026 per-joint table (UR5e mean of two robots): viscous 13.9/8.9/8.92/1.26/1.59/1.39 N·m·s/rad, Coulomb 8.58/12.94/9.56/2.24/2.08/2.13 Nm | [L] |
 | Joint encoder quantization | ~1e-5 rad | derived estimate |
 | Joint encoder noise | σ ≈ 0.5–1e-5 rad | estimate [NF] |
 | Joint states / FTS publish rate | 500 Hz | [V] |
@@ -231,7 +239,7 @@ e-series factory presets (extracted from PolyScope `safety.conf`; labeled "sugge
 
 ### 4.5 Still open
 
-- Exact per-joint friction table (Gnad et al. 2026 — paywalled; adopt the table when obtained, ranges + calibration until then).
+- ~~Exact per-joint friction table~~ — obtained 2026-11-24 (`sources/literature/friction_table.xlsx`). Remaining open item: the asymmetric Coulomb split (forward vs backward power flow) is not in the table — use symmetric Coulomb first, asymmetric as a later refinement.
 - Servo position bandwidth: undocumented → emerges from the L2 current loop + JTC PID cascade; tune the cascade empirically so step responses look plausible (finite rise time, slight overshoot, ~50–200 ms settling at 500 Hz loop).
 - FTS noise spectrum: decided — vendor-conservative worst-case values as default; the literature model remains a config option.
 - L2 electrical parameters (R, L, k_t, k_e, PWM frequency) for the candidate Kollmorgen motors — datasheet-sourced [OEM]; the exact motor series is unconfirmed by UR.
