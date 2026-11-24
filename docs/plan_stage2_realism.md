@@ -116,15 +116,19 @@ UR5e.
   φ ≈ 0.3–0.6° (at k = 1e4 Nm/rad). Every torque reversal winds the spring
   the other way.
 - **Torsional resonance:** the reflected rotor inertia J_m·N² ≈ 0.65 kg·m² is
-  comparable to the link inertia, so the pair oscillates. From motor torque to
-  link position there is an anti-resonance ω_ar = √(k/J_link) ≈ 16 Hz (rotor
-  oscillates while the link stands nearly still — visible on the motor encoder
-  only) and a resonance ω_res = √(k·(J_m·N² + J_link)/(J_m·N²·J_link)) ≈ 25 Hz
-  (J_link = 1.0, k = 1e4). This 15–25 Hz structural mode sits inside the
-  500 Hz sensor bandwidth and the JTC PID bandwidth: residual vibration after
-  moves, and a hard ceiling on achievable servo bandwidth — the research doc's
+  comparable to the link inertia, so the pair oscillates. In the transfer from
+  motor torque to MOTOR position there is an anti-resonance (zero)
+  ω_ar = √(k/J_link) ≈ 19.5 Hz: at that frequency the link + spring act as a
+  vibration absorber — the rotor stands still while the LINK oscillates
+  (visible on the joint encoder, absent from the motor encoder). The
+  resonance ω_res = √(k·(J_m·N² + J_link)/(J_m·N²·J_link)) ≈ 31 Hz appears in
+  both responses (J_link = 1.0, k = 1.5e4 seeds — k pending the Madsen figure
+  extraction). This structural mode sits inside the 500 Hz sensor bandwidth
+  and the JTC PID bandwidth: residual vibration after moves, and a hard
+  ceiling on achievable servo bandwidth — the research doc's
   "servo bandwidth: not published [NF]" emerges from this physics instead of
-  being asserted.
+  being asserted. (Corrected 2026-11-24: the anti-resonance is a zero of the
+  MOTOR response, not the link response.)
 - **Fault signature:** the motor-vs-joint encoder divergence θ_m/N − θ_j = φ is
   the basis of C46A, C75/C265 and gearbox-wear detection — a degrading
   flexspline lowers k, so the resonance drops and windup grows.
@@ -195,16 +199,35 @@ offset. Nothing exotic to model.
   Kollmorgen datasheets (τ_e cross-checked 1.34 / 0.93 ms; all windings
   consistent); winding defaults 06826-D / 05008-C; the FOC now runs on
   identification estimates, never on true plant values.
-- **1.2 Mechanical stage:** `two_mass.m` (rotor EOM + stiffening flexspline),
-  `test_mechanical.m` — steady windup φ = τ/k, the ~16/25 Hz
-  anti-resonance/resonance pair (control-package FRF), motor-vs-joint encoder
-  divergence.
+- **1.2 Mechanical stage:** `params_mech.m` (Gnad per-joint friction +
+  flexspline seeds), `two_mass.m` (rotor EOM + stiffening flexspline k(φ)),
+  `test_mechanical.m` — steady windup under gravity load (stiffening visible:
+  φ/φ_linear = 0.86 at 50 Nm → 0.70 at 100 Nm), the anti-resonance/resonance
+  pair (19.5 / 31.0 Hz with the k0 = 1.5e4 seed; formula = control-pkg =
+  kick-test FFT), friction terminal velocity (exact), motor-vs-joint encoder
+  divergence. **Result (2026-11-24): PASSED.**
 - **1.3 Integrated plant + servo tuning:** 500 Hz outer JTC-style PID closed
   around the cascade, tuned **in Octave**; step-response acceptance (finite
   rise time, slight overshoot, ~50–200 ms settling) and example-trajectory
   tracking without tolerance aborts.
-- **1c/1d layers** (PWM ripple on the current signal, dead-time offset, cogging
-  Fourier terms, fault hooks) fold in after the ideal layers validate.
+- **1c/1d layers (DEFERRED — designed 2026-11-24, optional path):** the
+  SVPWM/drive-electronics layer, designed but not yet built. Architecture:
+  `inverter.m` — power stage between `foc_loop` and `pmsm`: dead-time offset
+  mapped to d-q via the current angle (≈ V_dc·t_dt/T_sw ≈ 0.5–1 V, sign-opposed
+  to phase current), device drops folded in, circular clamp tracking the
+  actual bus; plus a one-state bus model C·dV_dc/dt = (P_src − P_motor)/V_dc
+  with regen clamp at 55 V (C56A) — the piece that makes `voltage_sag` and
+  overcurrent faults physical. `sense_current.m` — measurement path only:
+  analytic PWM ripple Δi_pp ≈ V_dc/(8·L·f_sw), 12-bit ADC quantization, bias —
+  feeding the virtual motor-current stream the twin consumes (a real 500 Hz
+  UR `tool_data` stream). Deliberately excluded: switching-level integration
+  (rotor inertia filters f_sw — torque sees only the period average),
+  semiconductor transient/loss detail (thermal is one-way), hexagon
+  overmodulation (config option only). Validation plan: ripple matches the
+  analytic bound with unchanged average torque; dead-time 6th-harmonic at
+  the electrical frequency; bus regen → 55 V clamp; sag → ceiling drop →
+  torque falloff at speed. Cogging Fourier terms and fault hooks fold in
+  after the ideal layers validate.
 
 Acceptance for step 1 (feeds the overall Stage 2 acceptance): step responses
 show finite rise time + slight overshoot + ~50–200 ms settling at the 500 Hz
