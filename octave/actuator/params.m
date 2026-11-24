@@ -71,9 +71,17 @@ function M = params(joint_group)
   M.Kt     = M.Kt_rms/sqrt(2);   % Nm/A_peak (peak-current convention)
   M.lambda = M.Kt/(1.5*M.p);     % flux linkage, Wb
   % --- controller belief (identification results, with errors) ---
-  % [OEM] tolerance bounds: Kt/R +-10 %, L +-20 %. A real drive's
-  % identification lands somewhere in here; set id_err to 0 for perfect ID.
-  M.id_err = struct('R', 0.10, 'L', -0.20, 'Kt', 0.10);
+  % THREE error regimes exist; id_err models the FIRST as the healthy default:
+  %  1. identification accuracy (what modern drive ID achieves): R ~1-3 %,
+  %     L ~5-15 %, Kt/lambda ~2-5 % (DC step + HF injection + back-EMF at
+  %     speed). DEFAULT below.
+  %  2. unit tolerance (datasheet spread, worst case if the drive never
+  %     identifies the unit): Kt/R +-10 %, L +-20 % [OEM].
+  %     Worst-case corners for experiments: R +10 %, L -20 %, Kt +10 %.
+  %  3. thermal drift: R +0.39 %/C, Kt -11 % cold->hot [OEM hot/cold
+  %     columns] — modeled later on the TRUTH side as R(T)/lambda(T) hooks
+  %     in the thermal model, not as a static id_err.
+  M.id_err = struct('R', 0.03, 'L', 0.08, 'Kt', 0.03);
   M.Rhat      = M.R*(1+M.id_err.R);
   M.Lhat      = M.L*(1+M.id_err.L);
   M.Kthat     = M.Kt*(1+M.id_err.Kt);

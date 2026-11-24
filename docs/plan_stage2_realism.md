@@ -181,8 +181,11 @@ offset. Nothing exotic to model.
   `test_electrical.m` — validates τ_e = L/R against the research values
   (0.9 ms wrist / 1.3 ms J1–3), τ_em = Kt·i_q, back-EMF at speed (coupled
   i_d–i_q steady state), the current-loop crossover *emerging* from the PI +
-  delay (design point f_sw/20 = 500 Hz; ID errors degrade the 2.5 % overshoot
-  to 5.3 %), and the flux-weakening check.
+  delay (design point f_sw/20 = 500 Hz; typical ID errors R +3 % / L +8 % /
+  Kt +3 % degrade the 2.5 % overshoot to 4.6 % and shift the achieved
+  crossover to 540 Hz; tolerance-corner worst case R +10 % / L −20 % /
+  Kt +10 % → 5.3 % overshoot, 400 Hz, −9.1 % torque gain — documented in
+  `params.m` as a preset), and the flux-weakening check.
   **Result (2026-11-18): PASSED** — τ_e measured 1.30/0.91 ms, i_ss = V/R,
   τ_em = Kt·i_q, coupled back-EMF steady state matched analytically, voltage
   ceiling simulated = analytic (346 rad/s).
