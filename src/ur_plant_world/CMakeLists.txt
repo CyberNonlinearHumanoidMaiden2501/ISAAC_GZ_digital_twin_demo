@@ -20,7 +20,26 @@ find_package(gz-sim8 REQUIRED)
 set(GZ_SIM_VER ${gz-sim8_VERSION_MAJOR})
 message(STATUS "Compiling against Gazebo Harmonic")
 
-# System plugin targets (actuator_dynamics, fault_injection) are added in Stage 2.
+# System plugins (Stage 2).
+
+add_library(ur_plant_world_actuator_dynamics SHARED
+  src/actuator_dynamics.cpp)
+target_include_directories(ur_plant_world_actuator_dynamics
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
+target_link_libraries(ur_plant_world_actuator_dynamics
+  PRIVATE
+    gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
+    gz-sim${GZ_SIM_VER}::gz-sim${GZ_SIM_VER}
+    gz-common${GZ_COMMON_VER}::gz-common${GZ_COMMON_VER})
+
+# The fault_injection plugin target is added in a later Stage 2 step.
+
+install(TARGETS ur_plant_world_actuator_dynamics
+  ARCHIVE DESTINATION lib/${PROJECT_NAME}
+  LIBRARY DESTINATION lib/${PROJECT_NAME}
+  RUNTIME DESTINATION bin/${PROJECT_NAME})
 
 install(
   DIRECTORY worlds/

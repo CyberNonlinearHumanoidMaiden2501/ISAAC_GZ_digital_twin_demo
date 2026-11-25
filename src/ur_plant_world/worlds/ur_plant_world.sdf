@@ -19,6 +19,13 @@
         <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"></plugin>
         <plugin filename="gz-sim-forcetorque-system" name="gz::sim::systems::ForceTorque"></plugin>
 
+        <!-- Plant actuator model (Stage 2.1): l0 passthrough until 2.2. -->
+        <plugin filename="ur_plant_world_actuator_dynamics" name="ur_plant_world::ActuatorDynamics">
+            <actuator_model>l0</actuator_model>
+            <model_name>ur</model_name>
+            <log_period>1.0</log_period>
+        </plugin>
+
         <light type="directional" name="sun">
             <cast_shadows>false</cast_shadows>
             <pose>0 0 10 0 0 0</pose>

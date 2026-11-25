@@ -270,6 +270,12 @@ every boundary. The plugin lives in `ur_plant_world` (namespace
 - Acceptance: clean colcon build; headless launch; the plugin loads and
   logs the joints; `example_move.py` behaves exactly as Stage 1 (passthrough
   = no actuator filtering yet).
+  **Result (2026-11-25): PASSED** — the plugin loads, resolves the six
+  actuated joints lazily (the robot is spawned after world Configure, so
+  PreUpdate retries until it appears; the fixed `base_joint` is filtered by
+  joint type), logs the gz_ros2_control effort commands, and
+  `example_move.py` aborts with the identical Stage-1
+  `GOAL_TOLERANCE_VIOLATED` signature — passthrough changes nothing.
 
 #### 2.2 PMSM electrical + mechanical (motor side + flexspline)
 
