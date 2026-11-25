@@ -1,8 +1,8 @@
 # Stage 2 Plan: C++ Realism Layer (actuator, faults, sensors, thermal)
 
-> Status: DRAFT — Step 1 (Octave reference model) and Step 2 (plugin port)
-> designed 2026-11-18; remaining steps to be added as the implementation order
-> is decided.
+> Status: Step 1 (Octave reference model) COMPLETE 2026-11-25; Step 2
+> (plugin port + Gazebo servo tuning) designed; remaining steps to be added
+> as the implementation order is decided.
 > Parent plan: [`plan_realistic_ur_plant.md`](plan_realistic_ur_plant.md).
 > Preceding stage: [`plan_stage1_description.md`](plan_stage1_description.md)
 > — finished 2026-10-31.
@@ -19,7 +19,7 @@
 | Mechanical/electrical faults | `ur_plant_world` | `fault_injection.cpp` — `/plant/mechanical_faults` service: `gearbox_wear`, `joint_jam`, `brake_drag`, `torque_derate`, `payload_misconfig`, `collision_push`, `voltage_sag`, `joint_overheat` |
 | Sensor faults + noisy topics | `ur_plant_sensors` | `plant_sensors` node: `/plant/joint_states` (quantized, noisy, drifting encoders), FTS republish with zeroing service, tool accelerometer; `/plant/sensor_faults`: `encoder_fault`, `fts_zero_shift`, `imu_fault`, `comms_latency`; `SetFault.srv` + `inject_fault.py` CLI |
 | Thermal model | `ur_plant_world` | first-order duty-cycle → joint temperature; 80 °C warning, 85 °C shutdown, no auto-recovery |
-| Servo tuning | all | one tuning session: JTC PID + current loop against the complete plant |
+| Servo tuning | Step 2 | one tuning session: JTC PID against the Gazebo plant (the current-loop design already lives in the Octave reference) |
 | Docs | `ur_plant_world` | README documenting every fault and its expected signature |
 
 ## Key design decisions already made
@@ -64,7 +64,10 @@ package; MATLAB unavailable), before any C++ — the plugin port in Step 2 is
 validated against this reference. Fixed-step integration at the switching
 period (10 kHz) mirrors the future plugin's sub-step structure, so the Octave
 loop and the C++ loop are the same algorithm. Progression: 1.1 electrical
-stage → 1.2 mechanical stage → 1.3 integrated plant + servo tuning.
+stage → 1.2 mechanical stage → 1.3 electronics layer + integrated plant
+verification. Position-loop tuning is deliberately NOT part of Step 1 — the
+real 500 Hz JTC runs in the sim, so the tuning session happens in Step 2
+against Gazebo, not against a recreated controller.
 
 **Design decision (2026-11-18): model the PMSM in the d-q frame** — the FOC frame
 every real servo drive runs in, so the plant becomes a literal emulation of the
@@ -206,40 +209,61 @@ offset. Nothing exotic to model.
   pair (19.5 / 31.0 Hz with the k0 = 1.5e4 seed; formula = control-pkg =
   kick-test FFT), friction terminal velocity (exact), motor-vs-joint encoder
   divergence. **Result (2026-11-24): PASSED.**
-- **1.3 Integrated plant + servo tuning:** 500 Hz outer JTC-style PID closed
-  around the cascade, tuned **in Octave**; step-response acceptance (finite
-  rise time, slight overshoot, ~50–200 ms settling) and example-trajectory
-  tracking without tolerance aborts.
-- **1c/1d layers (DEFERRED — designed 2026-11-24, optional path):** the
-  SVPWM/drive-electronics layer, designed but not yet built. Architecture:
-  `inverter.m` — power stage between `foc_loop` and `pmsm`: dead-time offset
-  mapped to d-q via the current angle (≈ V_dc·t_dt/T_sw ≈ 0.5–1 V, sign-opposed
-  to phase current), device drops folded in, circular clamp tracking the
-  actual bus; plus a one-state bus model C·dV_dc/dt = (P_src − P_motor)/V_dc
-  with regen clamp at 55 V (C56A) — the piece that makes `voltage_sag` and
-  overcurrent faults physical. `sense_current.m` — measurement path only:
-  analytic PWM ripple Δi_pp ≈ V_dc/(8·L·f_sw), 12-bit ADC quantization, bias —
-  feeding the virtual motor-current stream the twin consumes (a real 500 Hz
-  UR `tool_data` stream). Deliberately excluded: switching-level integration
-  (rotor inertia filters f_sw — torque sees only the period average),
-  semiconductor transient/loss detail (thermal is one-way), hexagon
-  overmodulation (config option only). Validation plan: ripple matches the
-  analytic bound with unchanged average torque; dead-time 6th-harmonic at
-  the electrical frequency; bus regen → 55 V clamp; sag → ceiling drop →
-  torque falloff at speed. Cogging Fourier terms and fault hooks fold in
-  after the ideal layers validate.
+- **1.3 Electronics layer + integrated plant verification:** the 1c/1d
+  content (required, not optional) — `inverter.m`: power stage between
+  `foc_loop` and `pmsm` — dead-time offset mapped to d-q via the current
+  angle (≈ V_dc·t_dt/T_sw ≈ 0.5–1 V, sign-opposed to phase current), device
+  drops folded in, circular clamp tracking the actual bus; plus a one-state
+  bus model C·dV_dc/dt = (P_src − P_motor)/V_dc with regen clamp at 55 V
+  (C56A) — the piece that makes `voltage_sag` and overcurrent faults
+  physical. `sense_current.m`: measurement path only — the drive's
+  measurement is the midpoint-sampled AVERAGE (real drives sample at the PWM
+  midpoint, rejecting the f_sw ripple), so the default is average + 12-bit
+  ADC quantization + bias; the ripple's analytic bound
+  Δi_pp ≈ V_dc/(8·L·f_sw) is available as an optional statistics-correct
+  injection — feeding the virtual motor-current stream the twin consumes (a
+  real 500 Hz UR `tool_data` stream). Cogging Fourier terms and fault hooks
+  fold in here.
+  Then the FULL reference model is wired end-to-end
+  (`foc_loop` → `inverter` → `pmsm` → `two_mass` + Gnad friction) and
+  verified open-loop: torque response through the gear, back-EMF at speed,
+  resonance and windup intact, effort realism. Deliberately excluded
+  (unchanged): switching-level integration (rotor inertia filters f_sw —
+  torque sees only the period average), semiconductor transient/loss detail
+  (thermal is one-way), hexagon overmodulation (config option only).
+  Validation: ripple matches the analytic bound with unchanged average
+  torque; dead-time 6th-harmonic at the electrical frequency; bus regen →
+  55 V clamp; sag → ceiling drop → torque falloff at speed. Completion of
+  1.3 = the Octave reference model is FINAL — the validation oracle for the
+  plugin port. **Result (2026-11-25): PASSED** — measurement stats exact
+  (bias 0.0203 vs set 0.02, std = ADC lsb/√12, ripple std 0.869 vs analytic
+  0.888); dead-time 6th harmonic 0.020 V vs 0.002 V with t_dt = 0 at
+  6·f_e = 955 Hz; regen clamps the bus at 55.00 V (diode-isolated supply);
+  sag (Vsrc = 40 V) at ω_m = 330 drops i_q 4.99 → 0.61 A (88 % falloff — the
+  point sits at the no-FW ceiling, where sag + dead-time leave almost no
+  voltage); integrated chain: terminal ω_j 1.5869 rad/s = expected exactly,
+  steady τ_fs = pC + pv·ω_j, windup 2.6 mrad. **Step 1 complete.**
 
-Acceptance for step 1 (feeds the overall Stage 2 acceptance): step responses
-show finite rise time + slight overshoot + ~50–200 ms settling at the 500 Hz
-loop, and the integrated plant tracks the example trajectory without tolerance
-aborts once the PID is tuned.
+Acceptance for step 1: the complete Octave reference (electrical +
+mechanical + electronics) passes all stage tests — the validated oracle the
+plugin is ported against. Position-loop (JTC PID) tuning is deliberately not
+done in Octave.
 
-### Step 2: Plugin development — `actuator_dynamics.cpp`
+### Step 2: Plugin development + servo tuning — `actuator_dynamics.cpp`
 
-Port the validated Octave model to the gz-sim plugin: same 10 kHz sub-step
-loop, same state variables, torque exchange with DART at the world's 1 kHz
-(DART only ever sees joint-side torque). Acceptance: identical step responses
-to the Octave reference for identical inputs. `actuator_model: l1` / `l0`
-fallbacks.
+Port the validated Octave reference to the gz-sim plugin: same 10 kHz
+sub-step loop, same state variables, torque exchange with DART at the
+world's 1 kHz (DART only ever sees joint-side torque). Acceptance: identical
+step responses to the Octave reference for identical inputs.
+`actuator_model: l1` / `l0` fallbacks.
+
+Then **tune the JTC PID against the Gazebo plant** — the real 500 Hz JTC
+runs in the sim, so this is where the servo-emulation tuning session lives
+(not recreated in Octave). Acceptance (feeds the overall Stage 2
+acceptance): step responses show finite rise time + slight overshoot +
+~50–200 ms settling at the 500 Hz loop, and `example_move.py` completes
+without tolerance aborts — the Stage 1 abort was partly
+torque-saturation-limited, so friction calibration is part of the fix, not
+just gain tuning.
 
 ### Step 3: TBD — fault injection → sensors → thermal → README (ordering TBD)
