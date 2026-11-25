@@ -359,14 +359,63 @@ every boundary. The plugin lives in `ur_plant_world` (namespace
   stage's decoupled setups; both were validated exactly in Octave (Step
   1.3), and the bus state was observed live (source droop under load).
 
-#### 2.4 JTC servo tuning
+#### 2.4 JTC servo tuning — guide (user-led session)
 
-Tune the JTC PID against the Gazebo plant — the real 500 Hz JTC runs in the
-sim, so this is where the servo-emulation tuning session lives (not
-recreated in Octave). Acceptance (feeds the overall Stage 2 acceptance):
-step responses show finite rise time + slight overshoot + ~50–200 ms
-settling at the 500 Hz loop, and `example_move.py` completes without
-tolerance aborts — the Stage 1 abort was partly torque-saturation-limited,
-so friction calibration is part of the fix, not just gain tuning.
+**Goal.** The documented acceptance band (no vendor spec exists [NF]):
+position step responses that look like a real servo at the 500 Hz loop.
+Concrete targets for a small step (0.1 rad): rise 10–90 % ≤ 100 ms,
+overshoot ≤ 15 %, 2 % settling **50–200 ms** (hard ceiling 300 ms); NO
+sustained spectral content at the two-mass mode (19.5/31 Hz with the
+current k₀ seeds); holding efforts stay inside the vendor torque ratings
+with margin (150 Nm J1–3 / 28 Nm wrist); `example_move.py` completes
+without tolerance aborts. These numbers are estimates pending real-robot
+step data (recorded as the refinement path).
+
+**What is tuned / what is NOT.**
+- TUNED: the JTC PID gains in `ur_plant_controllers.yaml` (both JTCs) —
+  seeds: shoulder p=4000/i=400/d=50, elbow 3500/350/40, wrist_1/2
+  800/50/10, wrist_3 500/30/5; `i_clamp` must stay below the vendor torque
+  ratings.
+- NOT TUNED: the actuator params (`plant_config.yaml`) — they ARE the
+  plant; changing them changes the thing being tuned. The one sanctioned
+  exception: flexspline ζ (0.03, [E]) if the two-mass mode proves
+  over/under-damped in the step tests — flagged in the closure commit.
+- NOT TUNED: the current-loop crossover wc (500 Hz) — part of the actuator
+  reference (the FOC, like a real drive, is not a tuning knob here).
+
+**Session plan (one session budget, one joint at a time, headless).**
+1. **Baseline.** Run `example_move.py` with the seeds; record the abort
+   signature (expected: Stage-1-style tolerance violation, possibly
+   joint-4 velocity, partly saturation-limited). This is the reference
+   failure to beat.
+2. **Single-joint steps.** Order: shoulder_pan (no gravity, decoupled) →
+   shoulder_lift / elbow (gravity-loaded) → wrists. Drive small 0.1 rad
+   steps through the JTC action interface (a small tuning script, or
+   `example_move.py` with a single-joint goal); measure with
+   `/joint_states` (500 Hz) + `/plant/actuator/<joint>/torque` and
+   `/windup` (1 kHz).
+3. **Gain procedure per joint.** Raise P until the step shows ~10–20 %
+   overshoot or the torque trace shows the 19.5/31 Hz mode ringing (the
+   resonance is the ceiling — back off ~30 % if either appears). Add I for
+   zero steady-state error (watch for low-frequency hunting — the ε = 0.05
+   smoothing should keep it clean). Add D only if the overshoot cannot be
+   tamed by P/I — the effort channel is noisy (500 Hz quantized PID), and
+   excessive D excites the resonance directly.
+4. **Saturation check.** During the largest planned move, watch
+   `/plant/actuator/<joint>/torque` z-component: the resolved joint torque
+   must stay inside the vendor ratings with ≥ 20 % margin (the Stage-1
+   abort was partly saturation-limited — if the margin can't be reached,
+   the fix is trajectory-scale or friction-parameter review, not more
+   gain).
+5. **Full-trajectory acceptance.** `example_move.py` completes without
+   tolerance aborts; record the final gains per joint and the achieved
+   step metrics (rise/overshoot/settling) in the controllers yaml
+   comments and this plan.
+
+**Recording.** The tuned gains replace the seeds in
+`ur_plant_controllers.yaml` with a comment noting the achieved metrics and
+the date; this plan's 2.4 gets the result note. If a joint's gains end up
+far from the seeds (≥ 3×), record why — that discrepancy is plant
+information, not noise.
 
 ### Step 3: TBD — fault injection → sensors → thermal → README (ordering TBD)
