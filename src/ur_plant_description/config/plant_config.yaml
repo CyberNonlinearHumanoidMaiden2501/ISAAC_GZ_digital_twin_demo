@@ -120,6 +120,15 @@ actuator:
     # J1-3: TBM2G-06826 winding D; wrists: TBM2G-05008 winding C.
     # d = modal flexspline damping (zeta = 0.03 vs the reference-mode
     # inertias of the Octave model); lambda/k2/gains derived in the plugin.
+    # k0 provenance: [E] seeds (1.5e4 J1-3 / 8e3 wrist Nm/rad) — the Madsen
+    # thesis figures carry the identified curve only as plots (no numeric
+    # readout), so figure extraction was abandoned (2026-11-25). Literature
+    # anchors: the UR patent example (CN114867584A, from this thesis) gives
+    # k1 ~ 42 Nm/mrad ~ 4.2e4 Nm/rad with k3 ~ 2.4 Nm/mrad^3 ~ 2.4e9 for
+    # the base joint, plus a fixed k0 = 1e4 Nm/rad in its lumped model;
+    # Harmonic-Drive catalog units in the UR5e sizes span ~1.4e4-2.9e4.
+    # The seeds sit at the low end of that band — a two-line change if the
+    # patent values are ever confirmed.
     shoulder_pan_joint:
       {p: 10, R: 0.1085, L: 0.000145, Kt: 0.1011, Jm: 0.000064, N: 101,
        k0: 15000.0, d: 4.613, phi_ref: 0.005, s_fac: 0.5,

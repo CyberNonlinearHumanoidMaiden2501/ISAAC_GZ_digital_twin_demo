@@ -38,8 +38,16 @@
 
 ## Research sub-tasks (prerequisites for full parameterization)
 
-1. Extract the flexspline stiffness curve k(φ) from the Madsen thesis figures
-   (`docs/sources/literature/`).
+1. ~~Extract the flexspline stiffness curve k(φ) from the Madsen thesis
+   figures~~ — CLOSED 2026-11-25: the identified curve exists only as plots
+   (fig. 12/13, thesis PDF pp. 167–169) with no numeric readout; hand
+   measurement was judged unreliable. The UR patent example
+   (CN114867584A, from this thesis) is recorded as the anchor —
+   k₁ ≈ 42 Nm/mrad ≈ 4.2e4 Nm/rad, k₃ ≈ 2.4 Nm/mrad³ ≈ 2.4e9 Nm/rad³
+   (base joint; units from the search snippet, unverified) — and the [E]
+   seeds (k₀ = 1.5e4 / 8e3, k₂ from s_fac = 0.5 at φ_ref = 5 mrad) are
+   kept, sitting at the low end of the catalog band (1.4e4–2.9e4).
+   Flexspline damping ζ = 0.03 remains [E]; calibrate during 2.4.
 2. Source R / L / k_t / k_e for the candidate Kollmorgen TBM2G motors
    (datasheets).
 3. ~~The Gnad 2026 per-joint friction table~~ — obtained 2026-11-24:

@@ -197,7 +197,7 @@ e-series factory presets (extracted from PolyScope `safety.conf`; labeled "sugge
 | Gear ratio (motor-side modeling) | 101:1 | [L] |
 | Motor electrical τ_e = L/R | ≈0.9 ms (wrist) / 1.3 ms (J1–3) | [L] derived from candidate-motor datasheets |
 | Rotor inertia J_m | 6.4e-5 (J1–3) / 1.2e-5 (J4–6) kg·m² | [L] Robotica 2024 |
-| Flexspline stiffness k(φ) | stiffening spring (values in thesis figures) | [L] Madsen |
+| Flexspline stiffness k(φ) | stiffening spring — identified curve in Madsen as plots only (no numeric readout; figure extraction abandoned 2026-11-25); patent anchor k₁ ≈ 42 Nm/mrad ≈ 4.2e4 Nm/rad, k₃ ≈ 2.4 Nm/mrad³ (base joint); plant seeds k₀ = 1.5e4 / 8e3 [E] | [L]+[E] |
 | Joint friction | Gnad 2026 per-joint table (UR5e mean of two robots): viscous 13.9/8.9/8.92/1.26/1.59/1.39 N·m·s/rad, Coulomb 8.58/12.94/9.56/2.24/2.08/2.13 Nm | [L] |
 | Joint encoder quantization | ~1e-5 rad | derived estimate |
 | Joint encoder noise | σ ≈ 0.5–1e-5 rad | estimate [NF] |

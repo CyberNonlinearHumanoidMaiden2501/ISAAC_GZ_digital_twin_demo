@@ -298,7 +298,9 @@ config fallbacks in `plant_config.yaml`):
   noting the Stage 1 abort was partly torque-saturation-limited so friction
   calibration may be part of the fix → bridges → README documenting every fault and
   its expected signature. Research sub-tasks feeding the plugin: extract k(φ) from
-  the Madsen thesis figures (in `docs/sources/literature/`), source R/L/k_t/k_e from
+  the Madsen thesis figures (in `docs/sources/literature/`) — CLOSED
+  2026-11-25, the curve exists only as plots; the patent anchor is recorded
+  in `plant_config.yaml`, source R/L/k_t/k_e from
   the Kollmorgen TBM2G datasheets, and the Gnad per-joint friction table
   (obtained 2026-11-24). Detailed design: [`plan_stage2_realism.md`](plan_stage2_realism.md).
 - **Stage 3 (validation):** smoke test modeled on upstream `test_gz.py` (launch
