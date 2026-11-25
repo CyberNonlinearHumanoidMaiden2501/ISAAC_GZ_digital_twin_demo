@@ -86,8 +86,41 @@ models:
     fts: {force_range: 160.0, torque_range: 10.0}
     payload_kg: 16
 
-# Actuator model for the Stage 2 actuator_dynamics plugin; recorded here so all
-# plant parameters stay in one place.
+# Actuator model for the Stage 2 actuator_dynamics plugin — the L2 reference
+# values from octave/actuator/ (params.m / params_mech.m), the plugin's
+# parameter source. Electrical [OEM] Kollmorgen TBM2G datasheets; friction
+# [L] Gnad 2026 table; flexspline k0 [E] pending Madsen figure extraction.
 actuator:
-  tau_motor: {default: 0.005}   # first-order motor lag, s [E: ~1-3 ms electrical + 2 ms loop]
-  torque_rate_limit: 500.0      # Nm/s, tuned empirically [E]
+  model: l2                  # l2 full cascade / l1 two-mass / l0 passthrough
+  fsw: 10000                 # [E] PWM frequency -> 10 kHz internal sub-steps
+  Vdc: 48.0                  # [V] bus (the bus STATE arrives in 2.3)
+  wc: 3141.59                # [E] current-loop crossover, rad/s = 2*pi*500
+  id_err: {R: 0.03, L: 0.08, Kt: 0.03}   # identification errors: belief = truth*(1+err)
+  joints:
+    # J1-3: TBM2G-06826 winding D; wrists: TBM2G-05008 winding C.
+    # d = modal flexspline damping (zeta = 0.03 vs the reference-mode
+    # inertias of the Octave model); lambda/k2/gains derived in the plugin.
+    shoulder_pan_joint:
+      {p: 10, R: 0.1085, L: 0.000145, Kt: 0.1011, Jm: 0.000064, N: 101,
+       k0: 15000.0, d: 4.613, phi_ref: 0.005, s_fac: 0.5,
+       pC: 8.58, pv: 13.9, pv_m: 0.0, pC_m: 0.0, eps: 0.001}
+    shoulder_lift_joint:
+      {p: 10, R: 0.1085, L: 0.000145, Kt: 0.1011, Jm: 0.000064, N: 101,
+       k0: 15000.0, d: 4.613, phi_ref: 0.005, s_fac: 0.5,
+       pC: 12.94, pv: 8.9, pv_m: 0.0, pC_m: 0.0, eps: 0.001}
+    elbow_joint:
+      {p: 10, R: 0.1085, L: 0.000145, Kt: 0.1011, Jm: 0.000064, N: 101,
+       k0: 15000.0, d: 4.613, phi_ref: 0.005, s_fac: 0.5,
+       pC: 9.56, pv: 8.92, pv_m: 0.0, pC_m: 0.0, eps: 0.001}
+    wrist_1_joint:
+      {p: 7, R: 0.1725, L: 0.00016, Kt: 0.0608, Jm: 0.000012, N: 101,
+       k0: 8000.0, d: 0.516, phi_ref: 0.005, s_fac: 0.5,
+       pC: 2.24, pv: 1.26, pv_m: 0.0, pC_m: 0.0, eps: 0.001}
+    wrist_2_joint:
+      {p: 7, R: 0.1725, L: 0.00016, Kt: 0.0608, Jm: 0.000012, N: 101,
+       k0: 8000.0, d: 0.516, phi_ref: 0.005, s_fac: 0.5,
+       pC: 2.08, pv: 1.59, pv_m: 0.0, pC_m: 0.0, eps: 0.001}
+    wrist_3_joint:
+      {p: 7, R: 0.1725, L: 0.00016, Kt: 0.0608, Jm: 0.000012, N: 101,
+       k0: 8000.0, d: 0.516, phi_ref: 0.005, s_fac: 0.5,
+       pC: 2.13, pv: 1.39, pv_m: 0.0, pC_m: 0.0, eps: 0.001}

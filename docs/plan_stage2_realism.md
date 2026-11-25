@@ -296,6 +296,21 @@ every boundary. The plugin lives in `ur_plant_world` (namespace
   Gazebo (from `/joint_states`) matches the Octave integrated-test
   prediction (N·Kt·i_q − pC)/pv; windup/friction visible in tracking; the
   arm still holds and moves under the JTC with the seeded PID.
+  **Result (2026-11-25): PASSED (with one deferral).** The plugin runs the
+  cascade correctly — during `example_move.py` the logged chain is exact
+  (cmd −45.8 Nm → i_q −4.37 A = τ_j*/N/Kt̂ to 3 digits; windup −2.6 mrad
+  under ~46 Nm matches the Octave stiffening scale) — and an l0-vs-l2 A/B
+  run proves the physics consumes the resolved torque (the JTC's commanded
+  effort range shifts from −41…+8 Nm to −56…+20 Nm when the actuator is in
+  the loop). The arm holds the start pose (~zero effort at the near-stable
+  upright pose) and `example_move.py` moves it, aborting with the expected
+  tolerance signature (PID tuning is 2.4). Two fixes recorded: the plugin is
+  now model-attached and declared after `gz_ros2_control` (PreUpdate
+  ordering — the world-level plugin read stale commands), and the
+  SDF/URDF `actuator_model` takes precedence over the yaml `model:` field
+  (the yaml value silently overrode the A/B control run). The explicit
+  constant-effort terminal-velocity check is deferred to 2.3, where the
+  published state topics make the plugin-vs-Octave comparison mechanical.
 
 #### 2.3 Electronics + state observability
 

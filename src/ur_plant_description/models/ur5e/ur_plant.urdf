@@ -326,6 +326,14 @@
       </ros>
     </plugin>
   </gazebo>
+  <!-- Plant actuator dynamics (Stage 2.2): model-attached and declared AFTER
+       gz_ros2_control, so this plugin's PreUpdate runs after the controller
+       wrote JointForceCmd — the interception order the actuator needs. -->
+  <gazebo>
+    <plugin filename="ur_plant_world_actuator_dynamics" name="ur_plant_world::ActuatorDynamics">
+      <actuator_model>l2</actuator_model>
+    </plugin>
+  </gazebo>
   <!-- Add URDF transmission elements (for ros_control) -->
   <!--<xacro:ur_arm_transmission prefix="${prefix}" hw_interface="${transmission_hw_interface}" />-->
   <!-- Placeholder for ros2_control transmission which don't yet exist -->

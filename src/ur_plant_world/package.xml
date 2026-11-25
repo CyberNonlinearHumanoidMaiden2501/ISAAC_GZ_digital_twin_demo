@@ -12,6 +12,8 @@
 
   <!-- Gazebo library deps are intentionally not listed here: they are resolved via
        CMake find_package against the vendor prefixes (template pattern). -->
+  <depend>ament_index_cpp</depend>
+  <depend>yaml-cpp</depend>
   <exec_depend>rclcpp</exec_depend>
   <exec_depend>ur_plant_sensors</exec_depend>
 

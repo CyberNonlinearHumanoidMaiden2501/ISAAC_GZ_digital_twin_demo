@@ -20,6 +20,10 @@ find_package(gz-sim8 REQUIRED)
 set(GZ_SIM_VER ${gz-sim8_VERSION_MAJOR})
 message(STATUS "Compiling against Gazebo Harmonic")
 
+# Stage 2: yaml config (plant_config.yaml) + ament resource lookup
+find_package(yaml-cpp REQUIRED)
+find_package(ament_index_cpp REQUIRED)
+
 # System plugins (Stage 2).
 
 add_library(ur_plant_world_actuator_dynamics SHARED
@@ -32,7 +36,9 @@ target_link_libraries(ur_plant_world_actuator_dynamics
   PRIVATE
     gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
     gz-sim${GZ_SIM_VER}::gz-sim${GZ_SIM_VER}
-    gz-common${GZ_COMMON_VER}::gz-common${GZ_COMMON_VER})
+    gz-common${GZ_COMMON_VER}::gz-common${GZ_COMMON_VER}
+    yaml-cpp::yaml-cpp
+    ament_index_cpp::ament_index_cpp)
 
 # The fault_injection plugin target is added in a later Stage 2 step.
 
