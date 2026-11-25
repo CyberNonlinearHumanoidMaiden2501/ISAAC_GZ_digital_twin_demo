@@ -1,8 +1,8 @@
 # Stage 2 Plan: C++ Realism Layer (actuator, faults, sensors, thermal)
 
-> Status: Step 1 (Octave reference model) COMPLETE 2026-11-25; Step 2
-> (plugin port + Gazebo servo tuning) designed; remaining steps to be added
-> as the implementation order is decided.
+> Status: Step 1 (Octave reference model) COMPLETE 2026-11-25; Step 2 planned
+> in sub-stages 2.1 plugin framework → 2.2 PMSM electrical/mechanical →
+> 2.3 electronics + state publishing → 2.4 JTC tuning; remaining steps TBD.
 > Parent plan: [`plan_realistic_ur_plant.md`](plan_realistic_ur_plant.md).
 > Preceding stage: [`plan_stage1_description.md`](plan_stage1_description.md)
 > — finished 2026-10-31.
@@ -15,7 +15,7 @@
 
 | Component | Package | Content |
 |---|---|---|
-| L2 actuator cascade | `ur_plant_world` | `actuator_dynamics.cpp` — per-joint PMSM electrical stage (PI current loop, back-EMF, PWM transport delay, cogging ripple) + two-mass flexspline dynamics + friction in physical Nm; `l1`/`l0` config fallbacks |
+| L2 actuator cascade | `ur_plant_world` | `actuator_dynamics.cpp` — per-joint PMSM electrical stage (PI current loop, back-EMF, PWM transport delay, cogging ripple) + two-mass flexspline dynamics + friction in physical Nm + published per-joint actuator state topics; `l1`/`l0` config fallbacks |
 | Mechanical/electrical faults | `ur_plant_world` | `fault_injection.cpp` — `/plant/mechanical_faults` service: `gearbox_wear`, `joint_jam`, `brake_drag`, `torque_derate`, `payload_misconfig`, `collision_push`, `voltage_sag`, `joint_overheat` |
 | Sensor faults + noisy topics | `ur_plant_sensors` | `plant_sensors` node: `/plant/joint_states` (quantized, noisy, drifting encoders), FTS republish with zeroing service, tool accelerometer; `/plant/sensor_faults`: `encoder_fault`, `fts_zero_shift`, `imu_fault`, `comms_latency`; `SetFault.srv` + `inject_fault.py` CLI |
 | Thermal model | `ur_plant_world` | first-order duty-cycle → joint temperature; 80 °C warning, 85 °C shutdown, no auto-recovery |
@@ -251,19 +251,72 @@ done in Octave.
 
 ### Step 2: Plugin development + servo tuning — `actuator_dynamics.cpp`
 
-Port the validated Octave reference to the gz-sim plugin: same 10 kHz
-sub-step loop, same state variables, torque exchange with DART at the
-world's 1 kHz (DART only ever sees joint-side torque). Acceptance: identical
-step responses to the Octave reference for identical inputs.
-`actuator_model: l1` / `l0` fallbacks.
+Three sub-stages; the Octave reference (Step 1) is the validation oracle at
+every boundary. The plugin lives in `ur_plant_world` (namespace
+`ur_plant_world`, source `src/ur_plant_world/src/`, header
+`include/ur_plant_world/`), loaded from `worlds/ur_plant_world.sdf`.
 
-Then **tune the JTC PID against the Gazebo plant** — the real 500 Hz JTC
-runs in the sim, so this is where the servo-emulation tuning session lives
-(not recreated in Octave). Acceptance (feeds the overall Stage 2
-acceptance): step responses show finite rise time + slight overshoot +
-~50–200 ms settling at the 500 Hz loop, and `example_move.py` completes
-without tolerance aborts — the Stage 1 abort was partly
-torque-saturation-limited, so friction calibration is part of the fix, not
-just gain tuning.
+#### 2.1 Plugin framework (empty shell)
+
+- Standard gz-sim system plugin skeleton: `ISystemConfigure`/`ISystemPreUpdate`
+  + `GZ_ADD_PLUGIN`, registered in `worlds/ur_plant_world.sdf`.
+- Configure: read SDF params (config-file path, `actuator_model`), resolve
+  the model's joints. PreUpdate: for each joint, read the `JointForceCmd`
+  component (set by gz_ros2_control's GazeboSimSystem), log it (throttled),
+  pass it through unchanged (`l0` behavior).
+- Build: CMakeLists gets the plugin target
+  (`ur_plant_world_actuator_dynamics` shared lib, gz-sim cmake helpers);
+  the template's commented plugin target is finally used.
+- Acceptance: clean colcon build; headless launch; the plugin loads and
+  logs the joints; `example_move.py` behaves exactly as Stage 1 (passthrough
+  = no actuator filtering yet).
+
+#### 2.2 PMSM electrical + mechanical (motor side + flexspline)
+
+- Port `pmsm.m` (i_d, i_q), the FOC current loop (`foc_loop.m`: PI +
+  decoupling from the BELIEF, one-sample compute delay, circular clamp), and
+  the motor side of `two_mass.m` (θ_m, ω_m, flexspline τ_fs). The LINK side
+  is DART's: link inertia/gravity come from Gazebo, NOT the plugin — the
+  plugin applies τ_j = τ_fs − (pC·tanh(ω_j/ε) + pv·ω_j) (Gnad joint
+  friction) to the joint and reads θ_j, ω_j back from DART.
+- Command path: `JointForceCmd` (joint effort) → τ_m* = τ_j*/N + motor
+  friction feedforward → i_q* = τ_m*/Kt̂ (the belief, as in the reference).
+- Sub-step loop: 10 kHz internal integration (RK4, as in Octave), torque
+  exchange with DART at the world's 1 kHz. Per-joint params
+  (R/L/λ/p/N/Jm/k0/k2/d/pC/pv/ε, belief errors) load from
+  `plant_config.yaml` — the placeholder `actuator:` block is replaced by the
+  real per-joint L2 table (single source of truth; yaml-cpp dependency).
+- Acceptance: for a constant effort command, the terminal joint velocity in
+  Gazebo (from `/joint_states`) matches the Octave integrated-test
+  prediction (N·Kt·i_q − pC)/pv; windup/friction visible in tracking; the
+  arm still holds and moves under the JTC with the seeded PID.
+
+#### 2.3 Electronics + state observability
+
+- Port `inverter.m` (dead-time in d-q, diode-isolated bus state, 55 V regen
+  clamp) and `sense_current.m` (midpoint-average + ADC + bias) into the
+  plugin chain.
+- **State publishing:** per-joint gz-transport topics at 1 kHz under
+  `/plant/actuator/<joint>/`: motor current (i_d, i_q), motor velocity ω_m,
+  bus voltage V_dc, flexspline windup φ, torques τ_em/τ_fs. New entries in
+  `bridges.yaml` map them to ROS topics for the twin and for validation.
+- Fault hooks reserved: Vsrc / current-limit fields exposed in config so
+  the later `fault_injection` plugin can drive them.
+- Acceptance: topics publish at 1 kHz; **plugin ≡ Octave validation**: the
+  same effort input sequence → published ω_m/τ_fs/i_q traces match the
+  Octave reference (Step 1's integrated test) within numerical tolerance;
+  the regen and sag scenarios re-run in Gazebo with matching outcomes.
+  `actuator_model: l1` (two-mass, no electrical stage) and `l0`
+  (passthrough) remain selectable throughout.
+
+#### 2.4 JTC servo tuning
+
+Tune the JTC PID against the Gazebo plant — the real 500 Hz JTC runs in the
+sim, so this is where the servo-emulation tuning session lives (not
+recreated in Octave). Acceptance (feeds the overall Stage 2 acceptance):
+step responses show finite rise time + slight overshoot + ~50–200 ms
+settling at the 500 Hz loop, and `example_move.py` completes without
+tolerance aborts — the Stage 1 abort was partly torque-saturation-limited,
+so friction calibration is part of the fix, not just gain tuning.
 
 ### Step 3: TBD — fault injection → sensors → thermal → README (ordering TBD)

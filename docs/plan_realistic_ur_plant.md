@@ -256,6 +256,7 @@ config fallbacks in `plant_config.yaml`):
 | `/plant/ft_sensor/wrench` | TCP force-torque, ±50 N / ±10 Nm saturation, relative (zeroing) | 500 Hz |
 | `/plant/imu` | base 6-axis IMU with noise/bias | 500 Hz |
 | `/plant/tool_accel` | tool-flange accelerometer (linear only) | 500 Hz |
+| `/plant/actuator/<joint>/{motor_current, motor_velocity, bus_voltage, windup, torque}` | actuator motor-side state (plugin-published, bridged) — for the twin and for validation | 1 kHz |
 | `/joint_trajectory_controller/follow_joint_trajectory` | commanded trajectories | — |
 
 ## Parameter grounding (UR5e defaults; per-model tables in `plant_config.yaml`)
