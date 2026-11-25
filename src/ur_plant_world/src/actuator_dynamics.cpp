@@ -1,20 +1,28 @@
 // Copyright 2026 Qingyu Geng
 //
 // Port of the Octave reference model (octave/actuator/):
-//   foc_loop.m  -> StepJoint's PI + decoupling + one-sample delay + clamp
-//   pmsm.m      -> RK4Electrical (d-q ODE)
-//   two_mass.m  -> rotor side of RK4Electrical / RK4Mechanical (the link
-//                  side is DART's; only the flexspline coupling touches it)
-//   params.m + params_mech.m -> plant_config.yaml `actuator:` table
+//   foc_loop.m      -> StepJoint's PI + decoupling + one-sample delay
+//   inverter.m      -> dead-time in d-q + bus state (shared, diode-isolated)
+//   pmsm.m          -> RK4Electrical (d-q ODE)
+//   two_mass.m      -> rotor side of RK4Electrical / RK4Mechanical
+//   sense_current.m -> measurement model (midpoint average + ADC + bias)
+//   params*.m       -> plant_config.yaml `actuator:` table
+// DART owns the LINK side; the plugin applies the resolved joint torque by
+// overwriting JointForceCmd (PreUpdate runs after gz_ros2_control — the
+// plugin is declared after it in the URDF).
 #include "ur_plant_world/actuator_dynamics.hh"
 
 #include <chrono>
 #include <cmath>
 #include <memory>
+#include <random>
 #include <string>
+#include <vector>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <gz/common/Console.hh>
+#include <gz/msgs/double.pb.h>
+#include <gz/msgs/vector3d.pb.h>
 #include <gz/plugin/Register.hh>
 #include <gz/sim/EntityComponentManager.hh>
 #include <gz/sim/Util.hh>
@@ -29,6 +37,12 @@
 
 namespace ur_plant_world
 {
+namespace
+{
+constexpr char kTopicPrefix[] = "/plant/actuator/";
+constexpr double kTwoPiOver3 = 2.0943951023931953;  // 2*pi/3
+}  // namespace
+
 void ActuatorDynamics::Configure(const gz::sim::Entity &_entity,
     const std::shared_ptr<const sdf::Element> &_sdf,
     gz::sim::EntityComponentManager &_ecm,
@@ -77,6 +91,23 @@ void ActuatorDynamics::Configure(const gz::sim::Entity &_entity,
     return;
   }
 
+  // State publishers + per-joint effort override subscriptions.
+  pubBusVoltage_ =
+      node_.Advertise<gz::msgs::Double>(std::string(kTopicPrefix) +
+                                        "bus_voltage");
+  for (std::size_t i = 0; i < joints_.size(); ++i)
+  {
+    auto &j = joints_[i];
+    const std::string base = std::string(kTopicPrefix) + j.name;
+    j.pubCurrent = node_.Advertise<gz::msgs::Vector3d>(base + "/motor_current");
+    j.pubTorque = node_.Advertise<gz::msgs::Vector3d>(base + "/torque");
+    j.pubWindup = node_.Advertise<gz::msgs::Double>(base + "/windup");
+    j.pubMotorVelocity =
+        node_.Advertise<gz::msgs::Double>(base + "/motor_velocity");
+    node_.Subscribe(base + "/effort_override",
+        &ActuatorDynamics::OnEffortOverride, this);
+  }
+
   gzmsg << "ur_plant_world::ActuatorDynamics configured: actuator_model="
         << actuatorModel_ << ", joints=";
   for (std::size_t i = 0; i < joints_.size(); ++i)
@@ -106,13 +137,29 @@ bool ActuatorDynamics::LoadConfig(const std::string &_path)
     actuatorModel_ = act["model"].as<std::string>();
   if (act["fsw"])
     dt_ = 1.0 / act["fsw"].as<double>();
-  if (act["Vdc"])
-    Vdc_ = act["Vdc"].as<double>();
   if (act["wc"])
     wc_ = act["wc"].as<double>();
   const double errR = act["id_err"]["R"].as<double>();
   const double errL = act["id_err"]["L"].as<double>();
   const double errKt = act["id_err"]["Kt"].as<double>();
+
+  if (act["bus"])
+  {
+    const YAML::Node b = act["bus"];
+    bus_.Vdc = b["Vdc"].as<double>();
+    bus_.Vsrc = b["Vsrc"].as<double>();
+    bus_.Rsrc = b["Rsrc"].as<double>();
+    bus_.C = b["C"].as<double>();
+    bus_.tDt = b["t_dt"].as<double>();
+    bus_.Vclamp = b["V_clamp"].as<double>();
+    bus_.epsS = b["eps_s"].as<double>();
+  }
+  if (act["sense"])
+  {
+    sense_.iRange = act["sense"]["I_range"].as<double>();
+    sense_.bias = act["sense"]["bias"].as<double>();
+    sense_.rippleOn = act["sense"]["ripple_on"].as<bool>();
+  }
 
   for (auto &j : joints_)
   {
@@ -152,6 +199,17 @@ bool ActuatorDynamics::LoadConfig(const std::string &_path)
   return true;
 }
 
+void ActuatorDynamics::OnEffortOverride(const gz::msgs::Double &_msg,
+    const gz::transport::MessageInfo &_info)
+{
+  for (auto &j : joints_)
+  {
+    if (_info.Topic() ==
+        std::string(kTopicPrefix) + j.name + "/effort_override")
+      j.effortOverride = _msg.data();  // NaN disables the override
+  }
+}
+
 void ActuatorDynamics::PreUpdate(const gz::sim::UpdateInfo &_info,
     gz::sim::EntityComponentManager &_ecm)
 {
@@ -159,66 +217,125 @@ void ActuatorDynamics::PreUpdate(const gz::sim::UpdateInfo &_info,
       std::chrono::duration<double>(_info.simTime).count();
   const bool logNow = simTime - lastLogSimTime_ >= logPeriod_;
 
-  for (auto &j : joints_)
+  if (actuatorModel_ == "l0")
   {
-    // Command (set by gz_ros2_control's PreUpdate, which runs before ours).
-    double tauJCmd = 0.0;
+    if (logNow)
+    {
+      for (const auto &j : joints_)
+      {
+        double cmd = 0.0;
+        const auto *forceCmd =
+            _ecm.Component<gz::sim::components::JointForceCmd>(j.jointEntity);
+        if (forceCmd && !forceCmd->Data().empty())
+          cmd = forceCmd->Data()[0];
+        gzdbg << "actuator l0 passthrough: '" << j.name << "' cmd=" << cmd
+              << " Nm\n";
+      }
+      lastLogSimTime_ = simTime;
+    }
+    return;  // passthrough: the command flows to the physics unchanged
+  }
+
+  // Pre-read commands (effort override wins over the JTC) and DART state.
+  std::vector<double> cmd(joints_.size()), thJ(joints_.size()),
+      wJ(joints_.size());
+  for (std::size_t i = 0; i < joints_.size(); ++i)
+  {
+    auto &j = joints_[i];
+    cmd[i] = 0.0;
     const auto *forceCmd =
         _ecm.Component<gz::sim::components::JointForceCmd>(j.jointEntity);
     if (forceCmd && !forceCmd->Data().empty())
-      tauJCmd = forceCmd->Data()[0];
-
-    // DART joint state (the link side).
-    double thJ = 0.0, wJ = 0.0;
+      cmd[i] = forceCmd->Data()[0];
+    if (!std::isnan(j.effortOverride))
+      cmd[i] = j.effortOverride;
+    thJ[i] = 0.0;
+    wJ[i] = 0.0;
     const auto *pos =
         _ecm.Component<gz::sim::components::JointPosition>(j.jointEntity);
     const auto *vel =
         _ecm.Component<gz::sim::components::JointVelocity>(j.jointEntity);
     if (pos && !pos->Data().empty())
-      thJ = pos->Data()[0];
+      thJ[i] = pos->Data()[0];
     if (vel && !vel->Data().empty())
-      wJ = vel->Data()[0];
-
-    if (actuatorModel_ == "l0")
-    {
-      if (logNow)
-        gzdbg << "actuator l0 passthrough: '" << j.name
-              << "' cmd=" << tauJCmd << " Nm\n";
-      continue;  // passthrough: the command flows to the physics unchanged
-    }
-
-    // Rotor initialization: zero initial windup against the current pose.
+      wJ[i] = vel->Data()[0];
     if (!j.rotorInit)
     {
-      j.thM = j.N * thJ;
-      j.wM = j.N * wJ;
+      j.thM = j.N * thJ[i];
+      j.wM = j.N * wJ[i];
       j.rotorInit = true;
     }
+  }
 
-    for (int s = 0; s < substeps_; ++s)
-      StepJoint(j, tauJCmd, thJ, wJ);
+  // 10 kHz sub-steps: all joints step, then the shared bus integrates.
+  for (int s = 0; s < substeps_; ++s)
+  {
+    double pTotal = 0.0;
+    for (std::size_t i = 0; i < joints_.size(); ++i)
+      pTotal += StepJoint(joints_[i], cmd[i], thJ[i], wJ[i], bus_);
+    const double pSrc =
+        std::max(0.0, bus_.Vsrc * (bus_.Vsrc - bus_.Vdc) / bus_.Rsrc);
+    bus_.Vdc += (pSrc - pTotal) / bus_.Vdc / bus_.C * dt_;
+    bus_.Vdc = std::min(std::max(bus_.Vdc, 0.0), bus_.Vclamp);
+  }
 
-    // Resolved joint torque: flexspline minus the Gnad joint-side friction.
-    const double phi = j.thM / j.N - thJ;
-    const double phiDot = j.wM / j.N - wJ;
+  // Resolved torque + measurement, then apply to the joint and publish.
+  for (std::size_t i = 0; i < joints_.size(); ++i)
+  {
+    auto &j = joints_[i];
+    const double phi = j.thM / j.N - thJ[i];
+    const double phiDot = j.wM / j.N - wJ[i];
     j.tauFs = j.k0 * phi + j.k2 * phi * phi * phi + j.d * phiDot;
-    const double tauJ = j.tauFs - (j.pC * std::tanh(wJ / j.eps) + j.pv * wJ);
+    j.tauJ = j.tauFs - (j.pC * std::tanh(wJ[i] / j.eps) + j.pv * wJ[i]);
     _ecm.SetComponentData<gz::sim::components::JointForceCmd>(
-        j.jointEntity, std::vector<double>{tauJ});
+        j.jointEntity, std::vector<double>{j.tauJ});
+
+    // Measurement: midpoint average + 12-bit ADC + bias (+ optional ripple).
+    const double vMag = std::sqrt(j.vdPrev * j.vdPrev + j.vqPrev * j.vqPrev);
+    const double mod =
+        std::min(1.0, vMag / (bus_.Vdc / std::sqrt(3.0)));
+    double rip = 0.0;
+    if (sense_.rippleOn)
+    {
+      const double pp = bus_.Vdc * dt_ * mod / (8.0 * j.L);
+      rip = pp / (2.0 * std::sqrt(3.0)) * normal_(rng_);
+    }
+    const double lsb = 2.0 * sense_.iRange / 4096.0;
+    j.idMeasured = std::round((j.id + rip) / lsb) * lsb + sense_.bias;
+    j.iqMeasured = std::round((j.iq + rip) / lsb) * lsb + sense_.bias;
+
+    gz::msgs::Vector3d cMsg;
+    cMsg.set_x(j.idMeasured);
+    cMsg.set_y(j.iqMeasured);
+    j.pubCurrent.Publish(cMsg);
+    gz::msgs::Vector3d tMsg;
+    tMsg.set_x(j.tauEm);
+    tMsg.set_y(j.tauFs);
+    tMsg.set_z(j.tauJ);
+    j.pubTorque.Publish(tMsg);
+    gz::msgs::Double wMsg;
+    wMsg.set_data(phi);
+    j.pubWindup.Publish(wMsg);
+    gz::msgs::Double vMsg;
+    vMsg.set_data(j.wM);
+    j.pubMotorVelocity.Publish(vMsg);
 
     if (logNow)
     {
-      gzdbg << "actuator: '" << j.name << "' cmd=" << tauJCmd
-            << " Nm -> tau_fs=" << j.tauFs << " tau_j=" << tauJ
+      gzdbg << "actuator: '" << j.name << "' cmd=" << cmd[i]
+            << " Nm -> tau_fs=" << j.tauFs << " tau_j=" << j.tauJ
             << " i_q=" << j.iq << " windup=" << phi << " rad\n";
     }
   }
+  gz::msgs::Double bMsg;
+  bMsg.set_data(bus_.Vdc);
+  pubBusVoltage_.Publish(bMsg);
   if (logNow)
     lastLogSimTime_ = simTime;
 }
 
-void ActuatorDynamics::StepJoint(JointActuator &j, double _tauJCmd,
-    double _thJ, double _wJ)
+double ActuatorDynamics::StepJoint(JointActuator &j, double _tauJCmd,
+    double _thJ, double _wJ, BusState &_bus)
 {
   // Motor torque reference: joint effort reflected through the gearbox,
   // plus the motor-side friction feedforward (zero in the current config).
@@ -233,11 +350,11 @@ void ActuatorDynamics::StepJoint(JointActuator &j, double _tauJCmd,
     x = RK4Mechanical(j, x, j.tauEm, _thJ, _wJ, dt_);
     j.thM = x[0];
     j.wM = x[1];
-    return;
+    return 0.0;  // no electrical power in l1
   }
 
-  // l2: FOC current loop (belief gains/decoupling, one-sample delay,
-  // circular clamp at the nominal bus).
+  // FOC current loop: belief gains/decoupling, circular clamp at the
+  // actual bus, one-sample computation delay.
   const double we = j.p * j.wM;
   const double iqStar = tauMStar / j.Kthat;
   const double eD = -j.id;
@@ -246,7 +363,7 @@ void ActuatorDynamics::StepJoint(JointActuator &j, double _tauJCmd,
   j.intQ += j.ki * eQ * dt_;
   double vdRaw = j.kp * eD + j.intD - we * j.Lhat * j.iq;
   double vqRaw = j.kp * eQ + j.intQ + we * (j.Lhat * j.id + j.lambdahat);
-  const double vMax = Vdc_ / std::sqrt(3.0);
+  const double vMax = _bus.Vdc / std::sqrt(3.0);
   const double vMag = std::sqrt(vdRaw * vdRaw + vqRaw * vqRaw);
   if (vMag > vMax)
   {
@@ -255,10 +372,28 @@ void ActuatorDynamics::StepJoint(JointActuator &j, double _tauJCmd,
     j.intD -= j.ki * eD * dt_;  // conditional-integration anti-windup
     j.intQ -= j.ki * eQ * dt_;
   }
-  const double vd = j.vdPrev;   // one-sample computation delay
-  const double vq = j.vqPrev;
+  const double vdCmd = j.vdPrev;   // one-sample computation delay
+  const double vqCmd = j.vqPrev;
   j.vdPrev = vdRaw;
   j.vqPrev = vqRaw;
+
+  // Inverter: dead-time voltage error per phase, mapped to d-q.
+  const double thE = j.p * j.thM;
+  const double vDt = _bus.Vdc * (_bus.tDt / dt_);
+  const double ia = j.id * std::cos(thE) - j.iq * std::sin(thE);
+  const double ib = j.id * std::cos(thE - kTwoPiOver3) -
+                    j.iq * std::sin(thE - kTwoPiOver3);
+  const double ic = j.id * std::cos(thE + kTwoPiOver3) -
+                    j.iq * std::sin(thE + kTwoPiOver3);
+  const double ea = -vDt * std::tanh(ia / _bus.epsS);
+  const double eb = -vDt * std::tanh(ib / _bus.epsS);
+  const double ec = -vDt * std::tanh(ic / _bus.epsS);
+  const double vd = vdCmd +
+      2.0 / 3.0 * (ea * std::cos(thE) + eb * std::cos(thE - kTwoPiOver3) +
+                    ec * std::cos(thE + kTwoPiOver3));
+  const double vq = vqCmd -
+      2.0 / 3.0 * (ea * std::sin(thE) + eb * std::sin(thE - kTwoPiOver3) +
+                    ec * std::sin(thE + kTwoPiOver3));
 
   // Electrical + rotor ODE, one RK4 step.
   std::array<double, 4> x{j.id, j.iq, j.thM, j.wM};
@@ -268,6 +403,7 @@ void ActuatorDynamics::StepJoint(JointActuator &j, double _tauJCmd,
   j.thM = x[2];
   j.wM = x[3];
   j.tauEm = 1.5 * j.p * j.lambda * j.iq;
+  return 1.5 * (vd * j.id + vq * j.iq);  // electrical power drawn
 }
 
 std::array<double, 4> ActuatorDynamics::RK4Electrical(

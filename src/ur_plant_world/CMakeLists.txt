@@ -18,6 +18,8 @@ set(GZ_COMMON_VER ${gz-common5_VERSION_MAJOR})
 # Harmonic
 find_package(gz-sim8 REQUIRED)
 set(GZ_SIM_VER ${gz-sim8_VERSION_MAJOR})
+find_package(gz-transport13 REQUIRED)
+set(GZ_TRANSPORT_VER ${gz-transport13_VERSION_MAJOR})
 message(STATUS "Compiling against Gazebo Harmonic")
 
 # Stage 2: yaml config (plant_config.yaml) + ament resource lookup
@@ -37,6 +39,7 @@ target_link_libraries(ur_plant_world_actuator_dynamics
     gz-plugin${GZ_PLUGIN_VER}::gz-plugin${GZ_PLUGIN_VER}
     gz-sim${GZ_SIM_VER}::gz-sim${GZ_SIM_VER}
     gz-common${GZ_COMMON_VER}::gz-common${GZ_COMMON_VER}
+    gz-transport${GZ_TRANSPORT_VER}::gz-transport${GZ_TRANSPORT_VER}
     yaml-cpp::yaml-cpp
     ament_index_cpp::ament_index_cpp)
 

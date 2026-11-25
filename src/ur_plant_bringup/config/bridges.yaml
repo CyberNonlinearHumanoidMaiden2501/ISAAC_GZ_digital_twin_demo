@@ -5,6 +5,8 @@
 #   - the generator pins explicit <topic> elements on each sensor
 #     (base_imu, tool_accel, tcp_fts_sensor), giving /model/ur/<topic>.
 # All plant sensors are GZ_TO_ROS; nothing flows back to Gazebo in Stage 1.
+# Stage 2 adds the actuator state topics published by actuator_dynamics
+# (per joint: motor_current, torque, windup, motor_velocity; shared bus).
 - ros_topic_name: "/clock"
   gz_topic_name: "/clock"
   ros_type_name: "rosgraph_msgs/msg/Clock"
@@ -27,4 +29,154 @@
   gz_topic_name: "/model/ur/tcp_fts_sensor"
   ros_type_name: "geometry_msgs/msg/Wrench"
   gz_type_name: "gz.msgs.Wrench"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/shoulder_pan_joint/motor_current"
+  gz_topic_name: "/plant/actuator/shoulder_pan_joint/motor_current"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/shoulder_pan_joint/torque"
+  gz_topic_name: "/plant/actuator/shoulder_pan_joint/torque"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/shoulder_pan_joint/windup"
+  gz_topic_name: "/plant/actuator/shoulder_pan_joint/windup"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/shoulder_pan_joint/motor_velocity"
+  gz_topic_name: "/plant/actuator/shoulder_pan_joint/motor_velocity"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/shoulder_lift_joint/motor_current"
+  gz_topic_name: "/plant/actuator/shoulder_lift_joint/motor_current"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/shoulder_lift_joint/torque"
+  gz_topic_name: "/plant/actuator/shoulder_lift_joint/torque"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/shoulder_lift_joint/windup"
+  gz_topic_name: "/plant/actuator/shoulder_lift_joint/windup"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/shoulder_lift_joint/motor_velocity"
+  gz_topic_name: "/plant/actuator/shoulder_lift_joint/motor_velocity"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/elbow_joint/motor_current"
+  gz_topic_name: "/plant/actuator/elbow_joint/motor_current"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/elbow_joint/torque"
+  gz_topic_name: "/plant/actuator/elbow_joint/torque"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/elbow_joint/windup"
+  gz_topic_name: "/plant/actuator/elbow_joint/windup"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/elbow_joint/motor_velocity"
+  gz_topic_name: "/plant/actuator/elbow_joint/motor_velocity"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_1_joint/motor_current"
+  gz_topic_name: "/plant/actuator/wrist_1_joint/motor_current"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_1_joint/torque"
+  gz_topic_name: "/plant/actuator/wrist_1_joint/torque"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_1_joint/windup"
+  gz_topic_name: "/plant/actuator/wrist_1_joint/windup"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_1_joint/motor_velocity"
+  gz_topic_name: "/plant/actuator/wrist_1_joint/motor_velocity"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_2_joint/motor_current"
+  gz_topic_name: "/plant/actuator/wrist_2_joint/motor_current"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_2_joint/torque"
+  gz_topic_name: "/plant/actuator/wrist_2_joint/torque"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_2_joint/windup"
+  gz_topic_name: "/plant/actuator/wrist_2_joint/windup"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_2_joint/motor_velocity"
+  gz_topic_name: "/plant/actuator/wrist_2_joint/motor_velocity"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_3_joint/motor_current"
+  gz_topic_name: "/plant/actuator/wrist_3_joint/motor_current"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_3_joint/torque"
+  gz_topic_name: "/plant/actuator/wrist_3_joint/torque"
+  ros_type_name: "geometry_msgs/msg/Vector3"
+  gz_type_name: "gz.msgs.Vector3d"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_3_joint/windup"
+  gz_topic_name: "/plant/actuator/wrist_3_joint/windup"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/wrist_3_joint/motor_velocity"
+  gz_topic_name: "/plant/actuator/wrist_3_joint/motor_velocity"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/plant/actuator/bus_voltage"
+  gz_topic_name: "/plant/actuator/bus_voltage"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
   direction: GZ_TO_ROS

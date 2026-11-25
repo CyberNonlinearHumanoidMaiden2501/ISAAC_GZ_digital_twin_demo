@@ -329,6 +329,27 @@ every boundary. The plugin lives in `ur_plant_world` (namespace
   the regen and sag scenarios re-run in Gazebo with matching outcomes.
   `actuator_model: l1` (two-mass, no electrical stage) and `l0`
   (passthrough) remain selectable throughout.
+  **Result (2026-11-25): PASSED with two documented deferrals.** Topics
+  publish and bridge (25 gz topics at 1 kHz → ROS). A direct
+  `/plant/actuator/<joint>/effort_override` (gz.msgs.Double, joint-side Nm,
+  NaN = JTC command) was added as the open-loop validation hook, and the
+  static equivalence map was verified EXACT at two operating points: stall
+  (0.15 Nm override → i_q = τ_j*/N/Kt̂ = 0.014262, τ_fs = τ_j* exactly,
+  windup = τ_fs/k₀) and motion (15 Nm → i_q 1.441 = predicted, τ_fs =
+  k₀·φ + k₂·φ³). Two real bugs were found and fixed: (1) **double
+  friction** — the Stage-1 URDF `<dynamics damping/friction>` still fought
+  the plugin's Gnad friction (exactly the hazard Component 5 flagged); the
+  URDF dynamics are now removed (an empty `<dynamics/>` is invalid URDF —
+  the elements were deleted, not emptied). (2) The literature Coulomb
+  smoothing ε = 1e-3 produces a persistent low-speed limit cycle in the
+  1 kHz DART exchange; the default is now ε = 0.05 rad/s (Coulomb character
+  preserved), with the hunting behavior and a stiction-aware (Lugre) fix
+  documented in `plant_config.yaml`. Deferred to the validation stage: the
+  open-loop terminal-velocity and regen-to-55 scenarios in Gazebo — the arm
+  is dynamically coupled (huge pose-dependent pan inertia, 24 Hz rotor
+  ringing), so those clean steady-state checks need the fault-injection
+  stage's decoupled setups; both were validated exactly in Octave (Step
+  1.3), and the bus state was observed live (source droop under load).
 
 #### 2.4 JTC servo tuning
 

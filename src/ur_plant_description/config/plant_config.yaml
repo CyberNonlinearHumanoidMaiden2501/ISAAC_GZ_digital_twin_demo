@@ -93,9 +93,29 @@ models:
 actuator:
   model: l2                  # l2 full cascade / l1 two-mass / l0 passthrough
   fsw: 10000                 # [E] PWM frequency -> 10 kHz internal sub-steps
-  Vdc: 48.0                  # [V] bus (the bus STATE arrives in 2.3)
   wc: 3141.59                # [E] current-loop crossover, rad/s = 2*pi*500
   id_err: {R: 0.03, L: 0.08, Kt: 0.03}   # identification errors: belief = truth*(1+err)
+  # One DC bus for the whole robot (all six joint drives share it) — the
+  # inverter bus state from octave/actuator/inverter.m. Vsrc sag is the
+  # voltage_sag fault hook (C296A44/C50A51); V_clamp = regen clamp (C56A).
+  bus:
+    Vdc: 48.0
+    Vsrc: 48.0
+    Rsrc: 0.05
+    C: 0.01
+    t_dt: 2.0e-6             # [E] dead time, s (0.5-2 us typical)
+    V_clamp: 55.0
+    eps_s: 0.5               # dead-time zero-crossing smoothing, A
+  # Current measurement model (octave/actuator/sense_current.m): midpoint-
+  # sampled average + 12-bit ADC + bias; ripple is an optional synthetic
+  # injection with the analytic statistics (never affects dynamics).
+  sense: {I_range: 30.0, bias: 0.02, ripple_on: false}
+  # NOTE on the per-joint `eps` (Coulomb smoothing width): the literature
+  # value 1e-3 rad/s reproduces low-speed stick-slip hunting in the 1 kHz
+  # discrete loop (a real phenomenon, amplified by the DART exchange); the
+  # default 0.05 rad/s keeps the Coulomb character (tanh ~ 1 at terminal
+  # velocities) without the limit cycle. A stiction-aware model (Lugre) is
+  # the proper long-term fix, alongside asymmetric Coulomb.
   joints:
     # J1-3: TBM2G-06826 winding D; wrists: TBM2G-05008 winding C.
     # d = modal flexspline damping (zeta = 0.03 vs the reference-mode
@@ -103,24 +123,24 @@ actuator:
     shoulder_pan_joint:
       {p: 10, R: 0.1085, L: 0.000145, Kt: 0.1011, Jm: 0.000064, N: 101,
        k0: 15000.0, d: 4.613, phi_ref: 0.005, s_fac: 0.5,
-       pC: 8.58, pv: 13.9, pv_m: 0.0, pC_m: 0.0, eps: 0.001}
+       pC: 8.58, pv: 13.9, pv_m: 0.0, pC_m: 0.0, eps: 0.05}
     shoulder_lift_joint:
       {p: 10, R: 0.1085, L: 0.000145, Kt: 0.1011, Jm: 0.000064, N: 101,
        k0: 15000.0, d: 4.613, phi_ref: 0.005, s_fac: 0.5,
-       pC: 12.94, pv: 8.9, pv_m: 0.0, pC_m: 0.0, eps: 0.001}
+       pC: 12.94, pv: 8.9, pv_m: 0.0, pC_m: 0.0, eps: 0.05}
     elbow_joint:
       {p: 10, R: 0.1085, L: 0.000145, Kt: 0.1011, Jm: 0.000064, N: 101,
        k0: 15000.0, d: 4.613, phi_ref: 0.005, s_fac: 0.5,
-       pC: 9.56, pv: 8.92, pv_m: 0.0, pC_m: 0.0, eps: 0.001}
+       pC: 9.56, pv: 8.92, pv_m: 0.0, pC_m: 0.0, eps: 0.05}
     wrist_1_joint:
       {p: 7, R: 0.1725, L: 0.00016, Kt: 0.0608, Jm: 0.000012, N: 101,
        k0: 8000.0, d: 0.516, phi_ref: 0.005, s_fac: 0.5,
-       pC: 2.24, pv: 1.26, pv_m: 0.0, pC_m: 0.0, eps: 0.001}
+       pC: 2.24, pv: 1.26, pv_m: 0.0, pC_m: 0.0, eps: 0.05}
     wrist_2_joint:
       {p: 7, R: 0.1725, L: 0.00016, Kt: 0.0608, Jm: 0.000012, N: 101,
        k0: 8000.0, d: 0.516, phi_ref: 0.005, s_fac: 0.5,
-       pC: 2.08, pv: 1.59, pv_m: 0.0, pC_m: 0.0, eps: 0.001}
+       pC: 2.08, pv: 1.59, pv_m: 0.0, pC_m: 0.0, eps: 0.05}
     wrist_3_joint:
       {p: 7, R: 0.1725, L: 0.00016, Kt: 0.0608, Jm: 0.000012, N: 101,
        k0: 8000.0, d: 0.516, phi_ref: 0.005, s_fac: 0.5,
-       pC: 2.13, pv: 1.39, pv_m: 0.0, pC_m: 0.0, eps: 0.001}
+       pC: 2.13, pv: 1.39, pv_m: 0.0, pC_m: 0.0, eps: 0.05}
