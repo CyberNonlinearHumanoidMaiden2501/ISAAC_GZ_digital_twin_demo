@@ -114,6 +114,14 @@ actuator:
   # wrist joints free-drift at rest without it): static friction ~ratio x
   # Coulomb with a Stribeck roll-off at velocity vs. [E] values.
   stiction: {ratio: 1.3, vs: 0.01}
+  # NOTE on the wrist pv values and the URDF: the three wrist joints carry
+  # engine-side damping (<dynamics damping="0.5"/>) as a stabilizer against
+  # DART's velocity-limiter limit cycle (platform bug — see the stage-2
+  # plan's platform finding), and the plugin's pv is reduced by the same
+  # amount so the TOTAL viscous friction still equals the Gnad table. The
+  # URDF velocity limit is 10.0 (the limiter's enforcement is unstable near
+  # the real 180 deg/s limit; commanded-velocity realism comes from the JTC
+  # splines and the actuator torque limits).
   # NOTE on the per-joint `eps` (Coulomb smoothing width): the literature
   # value 1e-3 rad/s reproduces low-speed stick-slip hunting in the 1 kHz
   # discrete loop (a real phenomenon, amplified by the DART exchange); the
@@ -148,12 +156,12 @@ actuator:
     wrist_1_joint:
       {p: 7, R: 0.1725, L: 0.00016, Kt: 0.0608, Jm: 0.000012, N: 101,
        k0: 8000.0, d: 0.516, phi_ref: 0.005, s_fac: 0.5,
-       pC: 2.24, pv: 1.26, pv_m: 0.0, pC_m: 0.0, eps: 0.05}
+       pC: 2.24, pv: 0.76, pv_m: 0.0, pC_m: 0.0, eps: 0.05}
     wrist_2_joint:
       {p: 7, R: 0.1725, L: 0.00016, Kt: 0.0608, Jm: 0.000012, N: 101,
        k0: 8000.0, d: 0.516, phi_ref: 0.005, s_fac: 0.5,
-       pC: 2.08, pv: 1.59, pv_m: 0.0, pC_m: 0.0, eps: 0.05}
+       pC: 2.08, pv: 1.09, pv_m: 0.0, pC_m: 0.0, eps: 0.05}
     wrist_3_joint:
       {p: 7, R: 0.1725, L: 0.00016, Kt: 0.0608, Jm: 0.000012, N: 101,
        k0: 8000.0, d: 0.516, phi_ref: 0.005, s_fac: 0.5,
-       pC: 2.13, pv: 1.39, pv_m: 0.0, pC_m: 0.0, eps: 0.05}
+       pC: 2.13, pv: 0.89, pv_m: 0.0, pC_m: 0.0, eps: 0.05}

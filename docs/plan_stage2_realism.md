@@ -460,9 +460,19 @@ tolerances trace to a platform-level anomaly, NOT to the plant:
   the actuator friction (static ≈ 1.3× Coulomb, Stribeck roll-off) so
   rest poses hold like a real gearbox; (2) NaN guards (windup ±0.5 rad,
   currents ±200 A, non-finite reset) so no state can poison the physics;
-  (3) controller-side: raise the JTC's stopped_velocity_tolerance for the
-  wrists (0.2 → 3.2) and/or zero the wrist D-gains (the velocity channel
-  is noise; the position state reads correctly).
+  (3) **engine-side damping partition** — the three wrist joints carry
+  `<dynamics damping="0.5"/>` in the URDF (applied inside DART, where the
+  limiter lives) and the plugin's viscous is reduced by the same amount so
+  the total viscous still equals the Gnad table: this cut the physical
+  thrash ~50× (tool accel 36 g → ~1 g) but only reshapes the limiter's
+  cycle rather than eliminating it — the ±π READ junk persists in some
+  form at every knob setting; (4) the URDF velocity limit is raised to
+  10.0 because the limiter's enforcement is unstable near the real
+  180 °/s limit (commanded-velocity realism then comes from the JTC
+  splines + actuator torque limits); (5) controller-side: raise the JTC's
+  stopped_velocity_tolerance for the wrists (0.2 → 3.2) and/or zero the
+  wrist D-gains (the velocity channel is noise; the position state reads
+  correctly).
 
 **True fix — local gz_ros2_control patch (no waiting for upstream):**
 1. Source: ros-controls/gz_ros2_control tag 1.2.20 (a plain ament package).
