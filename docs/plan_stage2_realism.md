@@ -392,7 +392,7 @@ step data (recorded as the refinement path).
    shoulder_lift / elbow (gravity-loaded) → wrists. Drive small 0.1 rad
    steps through the JTC action interface (a small tuning script, or
    `example_move.py` with a single-joint goal); measure with
-   `/joint_states` (500 Hz) + `/plant/actuator/<joint>/torque` and
+   `/joint_states` (500 Hz, ground truth — the standard JSB topic; gz_ros2_control has no remapping support, so the noisy `/plant/joint_states` arrives with the sensors stage) + `/plant/actuator/<joint>/torque` and
    `/windup` (1 kHz).
 3. **Gain procedure per joint.** Raise P until the step shows ~10–20 %
    overshoot or the torque trace shows the 19.5/31 Hz mode ringing (the
@@ -417,5 +417,66 @@ step data (recorded as the refinement path).
 the date; this plan's 2.4 gets the result note. If a joint's gains end up
 far from the seeds (≥ 3×), record why — that discrepancy is plant
 information, not noise.
+
+**Environment note (2026-11-27).** The plant is fully local — the world,
+URDF and assets are local files, so nothing needs Gazebo Fuel. But the GUI
+launch (`gazebo_gui:=true`) phones `fuel.gazebosim.org` for its model
+browser at startup; on a blocked network that fetch can kill the whole
+`gz sim` process (GUI + server share one process) and the controller
+spawner then waits forever. Fix: dead-end the fuel server in
+`~/.gz/fuel/config.yaml` (`url: https://localhost:9`). Headless mode
+(`gazebo_gui:=false`) never triggers it and is the recommended mode for
+tuning. (Second, rarer killer of the same symptom: launching through the
+symlinked workspace path puts a SPACE into the world path — `gz sim` then
+fails its local-file check and falls into the same Fuel fallback; fixed in
+the launch file by realpath-ing every gz-facing path.)
+
+#### Platform finding (2026-11-28): wrist velocity-limit anomaly in gz_ros2_control/DART
+
+Recorded during the 2.4 session — the JTC aborts on wrist velocity
+tolerances trace to a platform-level anomaly, NOT to the plant:
+
+- **Symptom.** The JTC/JSB velocity state for the three wrist joints reads
+  ±π (the velocity limit), toggling with the sign of tiny real motions,
+  while the joints are meant to stand still. The arm physically thrashes:
+  the tool0 accelerometer reads 4.7–36 g at "standstill".
+- **Provenance.** Predates the actuator plugin (the Stage-1
+  "joint-4 velocity tolerance" abort was this) and reproduces in the
+  **pristine upstream sim** (wrist_2 drifts to −π and pins at +π
+  velocity).
+- **Read paths differ.** gz_ros2_control 1.2.20 reads the joint velocity
+  via the physics API, which returns the velocity-limit-saturated value;
+  our plugin reads the ECM `JointVelocity` component, which carries the
+  true value (the windup stays bounded at mrad — proof). No plugin-side
+  component write can fix their read (gz-sim 8's PostUpdate takes a const
+  ECM, and PreUpdate writes are clobbered by the physics).
+- **The URDF `velocity` limit attribute does not control it** (limits
+  10/1000 still read ±π) — the π default lives deeper in the stack.
+- **Mechanism (best model).** The stock wrists have zero friction; the
+  light joints free-drift into DART's velocity-limit enforcement, which
+  limit-cycles them at the limit. The limiter is DART-internal — not
+  reachable from the plugin.
+- **Interim workarounds (in the plant).** (1) Stiction stick regime in
+  the actuator friction (static ≈ 1.3× Coulomb, Stribeck roll-off) so
+  rest poses hold like a real gearbox; (2) NaN guards (windup ±0.5 rad,
+  currents ±200 A, non-finite reset) so no state can poison the physics;
+  (3) controller-side: raise the JTC's stopped_velocity_tolerance for the
+  wrists (0.2 → 3.2) and/or zero the wrist D-gains (the velocity channel
+  is noise; the position state reads correctly).
+
+**True fix — local gz_ros2_control patch (no waiting for upstream):**
+1. Source: ros-controls/gz_ros2_control tag 1.2.20 (a plain ament package).
+2. Patch the velocity read in `gz_system.cpp`: fill the velocity state
+   interface from the ECM `JointVelocity` component (true value) instead
+   of the limiter-saturated physics-API value; depending on what the
+   source shows, also suppress the zero-velocity holding writes for
+   joints that already receive force commands.
+3. If the source shows DART itself limit-cycling (the 4.7–36 g thrash is
+   real dynamics), the second patch point is the gz-physics DART plugin —
+   same local-build approach.
+4. Build into the workspace overlay (colcon), pin the patch file in the
+   repo, verify with the upstream reproduction (launch the pristine
+   `ur_simulation_gz` headless — the wrists pin at ±π within seconds).
+5. File the upstream issue with the reproduction as a by-product.
 
 ### Step 3: TBD — fault injection → sensors → thermal → README (ordering TBD)
