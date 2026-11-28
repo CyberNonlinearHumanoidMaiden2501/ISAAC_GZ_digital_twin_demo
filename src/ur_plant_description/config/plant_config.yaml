@@ -110,6 +110,10 @@ actuator:
   # sampled average + 12-bit ADC + bias; ripple is an optional synthetic
   # injection with the analytic statistics (never affects dynamics).
   sense: {I_range: 30.0, bias: 0.02, ripple_on: false}
+  # Stiction (the smoothed Coulomb alone has no static friction — the light
+  # wrist joints free-drift at rest without it): static friction ~ratio x
+  # Coulomb with a Stribeck roll-off at velocity vs. [E] values.
+  stiction: {ratio: 1.3, vs: 0.01}
   # NOTE on the per-joint `eps` (Coulomb smoothing width): the literature
   # value 1e-3 rad/s reproduces low-speed stick-slip hunting in the 1 kHz
   # discrete loop (a real phenomenon, amplified by the DART exchange); the

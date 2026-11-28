@@ -12,6 +12,7 @@
 // plugin is declared after it in the URDF).
 #include "ur_plant_world/actuator_dynamics.hh"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -160,6 +161,11 @@ bool ActuatorDynamics::LoadConfig(const std::string &_path)
     sense_.bias = act["sense"]["bias"].as<double>();
     sense_.rippleOn = act["sense"]["ripple_on"].as<bool>();
   }
+  if (act["stiction"])
+  {
+    stictionRatio_ = act["stiction"]["ratio"].as<double>();
+    stictionVs_ = act["stiction"]["vs"].as<double>();
+  }
 
   for (auto &j : joints_)
   {
@@ -279,16 +285,70 @@ void ActuatorDynamics::PreUpdate(const gz::sim::UpdateInfo &_info,
     bus_.Vdc = std::min(std::max(bus_.Vdc, 0.0), bus_.Vclamp);
   }
 
-  // Resolved torque + measurement, then apply to the joint and publish.
-  for (std::size_t i = 0; i < joints_.size(); ++i)
-  {
+    // Resolved torque + measurement, then apply to the joint and publish.
+    for (std::size_t i = 0; i < joints_.size(); ++i)
+    {
     auto &j = joints_[i];
     const double phi = j.thM / j.N - thJ[i];
     const double phiDot = j.wM / j.N - wJ[i];
-    j.tauFs = j.k0 * phi + j.k2 * phi * phi * phi + j.d * phiDot;
-    j.tauJ = j.tauFs - (j.pC * std::tanh(wJ[i] / j.eps) + j.pv * wJ[i]);
+    // Physical sanity guards: the flexspline is a stiff spring, and an
+    // uncontrolled windup transient saturates the electrical stage — the
+    // clamped values keep every quantity finite (a NaN torque would
+    // poison the physics engine).
+    const double phiC = std::clamp(phi, -0.5, 0.5);
+    j.tauFs = j.k0 * phiC + j.k2 * phiC * phiC * phiC +
+              j.d * std::clamp(phiDot, -50.0, 50.0);
+    // Stribeck stiction with a proper stick regime: below the breakaway
+    // velocity the friction BALANCES the spring torque up to the static
+    // limit (otherwise the light wrist joints free-drift at rest — the
+    // smoothed Coulomb alone has no static friction); above it, the
+    // classic Stribeck roll-off to the Coulomb level.
+    const double pCs = stictionRatio_ * j.pC;
+    double fric;
+    if (std::abs(wJ[i]) < stictionVs_)
+    {
+      fric = std::clamp(j.tauFs, -pCs, pCs);
+    }
+    else
+    {
+      const double stribeck =
+          j.pC + (pCs - j.pC) *
+                     std::exp(-(wJ[i] / stictionVs_) * (wJ[i] / stictionVs_));
+      fric = stribeck * std::tanh(wJ[i] / j.eps) + j.pv * wJ[i];
+    }
+      // The reported joint velocity is left to the physics (gz_ros2_control
+      // reads the physics API, not this component — a write here could not
+      // reach it). The velocity-limit garbage it produced for the light
+      // joints is prevented at the source: the stick regime below keeps
+      // the joints from drifting into the DART velocity limiter.
+      j.tauJ = j.tauFs - fric;
+
+    // Never hand the physics a non-finite state: reset the joint and
+    // apply zero torque for this iteration.
+    if (!std::isfinite(j.tauJ) || !std::isfinite(j.wM) ||
+        !std::isfinite(j.iq))
+    {
+      gzerr << "actuator: '" << j.name
+            << "' non-finite state — resetting the joint\n";
+      j.id = 0.0;
+      j.iq = 0.0;
+      j.intD = 0.0;
+      j.intQ = 0.0;
+      j.vdPrev = 0.0;
+      j.vqPrev = 0.0;
+      j.thM = j.N * thJ[i];
+      j.wM = j.N * wJ[i];
+      j.tauEm = 0.0;
+      j.tauFs = 0.0;
+      j.tauJ = 0.0;
+    }
+
     _ecm.SetComponentData<gz::sim::components::JointForceCmd>(
         j.jointEntity, std::vector<double>{j.tauJ});
+
+      // Resolved torque is applied below; the joint-velocity state is
+      // left to the physics (gz_ros2_control reads the physics API, not
+      // the ECM component — a component write could not reach it).
 
     // Measurement: midpoint average + 12-bit ADC + bias (+ optional ripple).
     const double vMag = std::sqrt(j.vdPrev * j.vdPrev + j.vqPrev * j.vqPrev);
@@ -398,8 +458,8 @@ double ActuatorDynamics::StepJoint(JointActuator &j, double _tauJCmd,
   // Electrical + rotor ODE, one RK4 step.
   std::array<double, 4> x{j.id, j.iq, j.thM, j.wM};
   x = RK4Electrical(j, x, vd, vq, _thJ, _wJ, dt_);
-  j.id = x[0];
-  j.iq = x[1];
+  j.id = std::clamp(x[0], -200.0, 200.0);
+  j.iq = std::clamp(x[1], -200.0, 200.0);
   j.thM = x[2];
   j.wM = x[3];
   j.tauEm = 1.5 * j.p * j.lambda * j.iq;

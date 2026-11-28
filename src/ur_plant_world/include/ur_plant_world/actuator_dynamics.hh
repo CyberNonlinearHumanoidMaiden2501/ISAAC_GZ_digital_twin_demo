@@ -112,6 +112,8 @@ private:
   std::vector<JointActuator> joints_;
   BusState bus_;
   SenseConfig sense_;
+  double stictionRatio_{1.3};   // static friction = ratio * Coulomb [E]
+  double stictionVs_{0.01};     // Stribeck velocity, rad/s [E]
   std::string actuatorModel_{"l2"};
   bool sdfModelSet_{false};   // SDF/URDF <actuator_model> wins over the yaml
   double wc_{2.0 * 3.14159265358979323846 * 500.0};  // rad/s (2*pi*500)
