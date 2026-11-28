@@ -93,12 +93,12 @@ scaled_joint_trajectory_controller:
       wrist_2_joint: { trajectory: 0.2, goal: 0.1 }
       wrist_3_joint: { trajectory: 0.2, goal: 0.1 }
     gains:
-      shoulder_pan_joint: { p: 4000.0, i: 400.0, d: 50.0, i_clamp: 40.0 }
-      shoulder_lift_joint: { p: 4000.0, i: 400.0, d: 50.0, i_clamp: 40.0 }
-      elbow_joint: { p: 3500.0, i: 350.0, d: 40.0, i_clamp: 40.0 }
-      wrist_1_joint: { p: 800.0, i: 50.0, d: 10.0, i_clamp: 8.0 }
-      wrist_2_joint: { p: 800.0, i: 50.0, d: 10.0, i_clamp: 8.0 }
-      wrist_3_joint: { p: 500.0, i: 30.0, d: 5.0, i_clamp: 5.0 }
+      shoulder_pan_joint: { p: 6000.0, i: 600.0, d: 1.0, i_clamp: 60.0 }
+      shoulder_lift_joint: { p: 10000.0, i: 1000.0, d: 1.0, i_clamp: 100.0 }
+      elbow_joint: { p: 8000.0, i: 800.0, d: 1.0, i_clamp: 80.0 }
+      wrist_1_joint: { p: 2000.0, i: 600.0, d: 0.0, i_clamp: 60.0 }
+      wrist_2_joint: { p: 2000.0, i: 200.0, d: 5.0, i_clamp: 20.0 }
+      wrist_3_joint: { p: 500.0, i: 50.0, d: 5.0, i_clamp: 5.0 }
 
 forward_velocity_controller:
   ros__parameters:

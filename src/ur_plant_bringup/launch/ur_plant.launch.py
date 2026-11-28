@@ -1,5 +1,6 @@
 import os
 
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, RegisterEventHandler
 from launch.conditions import IfCondition, UnlessCondition
@@ -12,6 +13,14 @@ from launch.substitutions import (
 )
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+
+# Resolve symlinks up front: this workspace is commonly reached through a
+# symlink ("digital twin" -> "digital_twin"), and the space in that path
+# makes `gz sim` fail its local-world lookup and fall into a Fuel download
+# attempt that kills the process (observed 2026-11-27). Realpaths keep
+# every gz-facing path space-free.
+def _real_share(pkg, *parts):
+    return os.path.realpath(os.path.join(get_package_share_directory(pkg), *parts))
 
 ARGUMENTS = [
     DeclareLaunchArgument(
@@ -32,16 +41,12 @@ ARGUMENTS = [
     ),
     DeclareLaunchArgument(
         "controllers_file",
-        default_value=PathJoinSubstitution(
-            [FindPackageShare("ur_plant_bringup"), "config", "ur_plant_controllers.yaml"]
-        ),
+        default_value=_real_share("ur_plant_bringup", "config", "ur_plant_controllers.yaml"),
         description="Path to the ros2_control controllers configuration.",
     ),
     DeclareLaunchArgument(
         "world_file",
-        default_value=PathJoinSubstitution(
-            [FindPackageShare("ur_plant_world"), "worlds", "ur_plant_world.sdf"]
-        ),
+        default_value=_real_share("ur_plant_world", "worlds", "ur_plant_world.sdf"),
         description="Absolute path to the Gazebo world file (pinned DART physics).",
     ),
     DeclareLaunchArgument(
@@ -62,9 +67,7 @@ ARGUMENTS = [
     ),
     DeclareLaunchArgument(
         "rviz_config_file",
-        default_value=PathJoinSubstitution(
-            [FindPackageShare("ur_description"), "rviz", "view_robot.rviz"]
-        ),
+        default_value=_real_share("ur_description", "rviz", "view_robot.rviz"),
         description="RViz configuration file.",
     ),
     DeclareLaunchArgument(
@@ -86,9 +89,10 @@ def generate_launch_description():
     # Read the committed URDF in Python so robot_description is a plain str
     # (launch parses substitution output as YAML, which URDF text is not).
     # OpaqueFunction so the file path resolves from the launch context — the
-    # ur_type argument selects the file.
+    # ur_type argument selects the file. Both the URDF read and the gz spawn
+    # use the realpath, so the symlinked workspace path never reaches gz.
     def create_robot_state_publisher(context):
-        desc_file = context.perform_substitution(description_file)
+        desc_file = os.path.realpath(context.perform_substitution(description_file))
         with open(desc_file, "r") as infp:
             robot_desc = infp.read()
         return [
@@ -97,7 +101,14 @@ def generate_launch_description():
                 executable="robot_state_publisher",
                 output="both",
                 parameters=[{"use_sim_time": True}, {"robot_description": robot_desc}],
-            )
+            ),
+            # Fixed spawn name "ur" — the bridge YAML's gz topic names depend on it.
+            Node(
+                package="ros_gz_sim",
+                executable="create",
+                output="screen",
+                arguments=["-file", desc_file, "-name", "ur"],
+            ),
         ]
 
     robot_state_publisher = OpaqueFunction(function=create_robot_state_publisher)
@@ -111,13 +122,15 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("launch_rviz")),
     )
 
-    # The broadcaster publishes the clean joint states; remapped to /raw_joint_states
-    # (ground truth). The Stage 2 plant_sensors node republishes the noisy plant data.
+    # The broadcaster publishes the clean joint states as /raw_joint_states
+    # (ground truth); the Stage 2 plant_sensors node republishes the noisy
+    # plant data. The remapping lives in the URDF's gz_ros2_control <ros>
+    # block — it must apply to the controller_manager process, which a
+    # spawner-side remapping cannot reach.
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
         arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"],
-        remappings=[("/joint_states", "/raw_joint_states")],
     )
 
     delay_rviz_after_joint_state_broadcaster_spawner = RegisterEventHandler(
@@ -140,13 +153,8 @@ def generate_launch_description():
         condition=UnlessCondition(LaunchConfiguration("activate_joint_controller")),
     )
 
-    # Fixed spawn name "ur" — the bridge YAML's gz topic names depend on it.
-    gz_spawn_entity = Node(
-        package="ros_gz_sim",
-        executable="create",
-        output="screen",
-        arguments=["-file", description_file, "-name", "ur"],
-    )
+    # Fixed spawn name "ur" is handled inside the robot_state_publisher
+    # OpaqueFunction (realpath'd -file argument, see above).
 
     gz_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -178,7 +186,6 @@ def generate_launch_description():
         delay_rviz_after_joint_state_broadcaster_spawner,
         initial_joint_controller_spawner_started,
         initial_joint_controller_spawner_stopped,
-        gz_spawn_entity,
         gz_sim,
         ros_gz_bridge_node,
     ]

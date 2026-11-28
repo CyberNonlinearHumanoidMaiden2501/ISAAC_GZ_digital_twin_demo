@@ -1,0 +1,16 @@
+# QoS overrides for ros2 bag record — the default record QoS is sensor-data
+# (best-effort), which is INCOMPATIBLE with reliable publishers like the
+# joint-state broadcaster: without this file the bag silently records
+# nothing for it. NOTE: the broadcaster is remapped — the 500 Hz ground
+# truth lives on /joint_states (/plant/joint_states arrives with the
+# sensors stage). A reliable subscriber is compatible with both reliable
+# and best-effort publishers, so this covers the whole tuning topic set.
+/joint_states:
+  reliability: reliable
+  durability: volatile
+/plant/actuator/shoulder_lift_joint/torque:
+  reliability: reliable
+  durability: volatile
+/plant/actuator/shoulder_lift_joint/windup:
+  reliability: reliable
+  durability: volatile

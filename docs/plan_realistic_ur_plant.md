@@ -114,7 +114,7 @@ workspace `install/setup.bash` currently chains their env hooks.
 - Copy of upstream `ur_controllers.yaml` with the trajectory controller switched to
   `command_interfaces: [effort]` and per-joint `gains: {p, i, d, i_clamp}`.
 - State interfaces become position + velocity (JTC's `state_interfaces` only accepts
-  `{position, velocity, acceleration}`; effort still flows to `/raw_joint_states` via
+  `{position, velocity, acceleration}`; effort still flows to `/joint_states` via
   the broadcaster's state read); controller_manager stays at 500 Hz.
 - **JSB publishes at the full 500 Hz** (no `state_publish_rate` override) — matching the
   real UR driver behavior.
@@ -145,8 +145,10 @@ workspace `install/setup.bash` currently chains their env hooks.
 
 ### 4. `ur_plant_sensors` — `plant_sensors.cpp` (rclcpp node)
 
-- JSB remapped to `/raw_joint_states` (clean = ground truth, republished explicitly
-  as `/ground_truth/joint_states`).
+- JSB publishes the clean `/joint_states` as ground truth (the standard JSB
+  topic — gz_ros2_control cannot remap the manager's controllers, so the
+  Stage-1 spawner-side remap never worked; the noisy `/plant/joint_states`
+  arrives with the sensors stage).
 - Publishes `/plant/joint_states` (500 Hz) with:
   - encoder quantization **~1e-5 rad** (derived from 1080 CPR motor encoder through
     101:1 and the AksIM output encoder; UR publishes no official bit depth),
@@ -251,7 +253,7 @@ config fallbacks in `plant_config.yaml`):
 
 | Topic | Meaning | Rate |
 |---|---|---|
-| `/ground_truth/joint_states` | clean sim truth — for twin validation only, never for estimation | 500 Hz |
+| `/joint_states` | clean sim truth (standard JSB topic) — for twin validation only, never for estimation | 500 Hz |
 | `/plant/joint_states` | noisy, quantized encoder data | 500 Hz |
 | `/plant/ft_sensor/wrench` | TCP force-torque, ±50 N / ±10 Nm saturation, relative (zeroing) | 500 Hz |
 | `/plant/imu` | base 6-axis IMU with noise/bias | 500 Hz |
